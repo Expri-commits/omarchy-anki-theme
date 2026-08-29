@@ -41,6 +41,29 @@ The add-on component that maps a palette onto Anki's color variables and pushes
 it through Anki's own theme pipeline.
 _Avoid_: theme engine, injector, styler
 
+**Clamp**:
+The normalize-then-map pre-pass (`clamp_palette`) that adjusts a palette's
+foreground-side colors when a guarded relationship falls below its floor.
+Pure function of the palette keys; the mapping runs after it, amended only
+where ticket 08 records (the on-tint candidate extension).
+_Avoid_: fix-up, correction
+
+**Guarded relationship**:
+A palette-color pairing (e.g. `foreground` on `background`) whose contrast the
+clamp enforces. Everything not listed as guarded is verbatim by policy.
+_Avoid_: check, rule (when meaning the pairing)
+
+**Floor**:
+The minimum WCAG contrast ratio a guarded relationship must meet — chosen as
+the highest threshold no stock palette violates, so stock themes never trigger
+a clamp.
+_Avoid_: threshold, limit
+
+**Faithful mode**:
+The add-on config `contrast_clamp = false`: guarded relationships render
+verbatim, no clamping.
+_Avoid_: raw mode, passthrough mode
+
 ### Switching
 
 **Polarity**:
