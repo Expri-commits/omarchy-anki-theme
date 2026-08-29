@@ -16,3 +16,5 @@ machine; regressions get investigated, never erased.
 
 | Date | Commit | Metric | Value | Method | Notes |
 | ---- | ------ | ------ | ----- | ------ | ----- |
+| 2026-08-29 | 3a31695 | dev-loop: watcher/IPC plugin reload | < 1 s (same-second) | journal timestamps of `Local plugin changed` → service mount proof-file rewrite | Reload re-instantiates but runs **stale** compiled QML (upstream basecamp/omarchy#6981) — not a valid apply path for code changes |
+| 2026-08-29 | 3a31695 | dev-loop: `omarchy restart shell` (applies QML code) | ~0.4 s command return, service remounted ~2 s later | `time omarchy restart shell` + proof-file `mountedAt` delta; Ryzen 5 7500F, Arch, quickshell 0.3.1-1, Omarchy 4.0 line | The mandatory step per QML code change (ticket 05) |
