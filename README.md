@@ -73,9 +73,11 @@ it installs the bundled add-on into Anki.
 omarchy plugin add https://github.com/Expri-commits/omarchy-anki-theme
 ```
 
-On first run the plugin asks for consent before copying its bundled Anki add-on
-into Anki's add-on folder — nothing touches your Anki configuration before you
-say yes. Start Anki and it follows your theme.
+When Anki is present, the plugin asks for consent on first run with an Omarchy
+notification: click it to allow the bundled add-on to be installed into Anki's
+add-on folder (`~/.local/share/Anki2/addons21/ankiya`). Nothing touches your
+Anki configuration before you say yes — not clicking leaves Anki untouched. Start
+Anki (or restart it, if it's already running) and it follows your theme.
 
 ## Remove
 
@@ -84,7 +86,16 @@ Two halves, two steps:
 1. Remove the plugin: `omarchy plugin remove io.github.expri-commits.anki-theme`
 2. Remove the add-on from Anki: **Tools → Add-ons → Ankiya → Delete**
 
-Anki immediately returns to its own theming.
+Restart Anki and it returns to its own theming — a running Anki keeps the
+colors already applied until it restarts. Optionally remove the plugin's state,
+consent record included:
+
+```bash
+rm -rf ~/.local/state/omarchy/anki-theme
+```
+
+Keeping the state is harmless; it only means a future reinstall won't ask for
+consent again.
 
 ## Configuration
 
