@@ -51,7 +51,8 @@ _Avoid_: loader, self-update shim
 
 **Standalone mode**:
 An installed add-on whose plugin is gone: it keeps theming (it is self-sufficient
-for recoloring) but receives no updates and sends no notifications.
+for recoloring) but receives no updates and sends no notifications, except the
+in-Anki drift notice (ticket 15).
 _Avoid_: orphaned add-on, degraded mode
 
 ### Theming

@@ -61,6 +61,10 @@ omarchy theme set (any trigger: menu, CLI, scheduler)
 The Omarchy plugin (Quickshell `service`) is the delivery half: with your consent
 it installs the bundled add-on into Anki and keeps it updated.
 
+When Anki itself updates, its color variables can churn. The add-on notices at
+startup and degrades gracefully — surfaces it no longer knows keep Anki's own
+colors — showing one transient tooltip until a plugin update restores coverage.
+
 ## Requirements
 
 - Omarchy 4.0.1 or newer. Third-party plugin installs and the theme state
@@ -121,8 +125,9 @@ Open **Tools → Add-ons → Ankiya → Config** in Anki:
 ## Privacy
 
 No network access, no telemetry. The add-on reads Omarchy's theme files and runs
-inside Anki; it writes only its own configuration. The plugin asks before placing
-anything in your Anki profile.
+inside Anki; it writes only its own configuration and small status markers in the
+plugin's state directory. The plugin asks before placing anything in your Anki
+profile.
 
 ## Development
 

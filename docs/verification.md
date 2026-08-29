@@ -52,10 +52,13 @@ residuals ledger the gate is responsible for closing. Vocabulary per
   `__pycache__` never.
 - **CSS / script generation** — body-scoped vars string, the injected
   `.primary` on-accent rule, the four `--bs-*` extras, engine-script source.
-- **Var-inventory tripwire** (feeds ticket 15) — a vendored snapshot of the
-  installed Anki's `aqt.colors` names; the mapping asserts it covers every name
-  in the snapshot. An Anki upgrade regenerates the snapshot; renamed/retracted
-  vars fail here first.
+- **Var-inventory tripwire** (the dev-side half of
+  [ticket 15](../.scratch/anki-theme/issues/15-anki-upgrade-var-churn-policy.md)'s
+  drift policy — the same snapshot and diff routine ship in the add-on payload
+  as its runtime startup check) — a vendored snapshot of the installed Anki's
+  `aqt.colors` names; the mapping asserts it covers every name in the snapshot.
+  An Anki upgrade regenerates the snapshot; renamed/retracted vars fail here
+  first.
 
 ### Tier 2 — fast live leg (changes touching theming delivery)
 
@@ -113,7 +116,11 @@ Composition:
   flow (toast → click → install → minimal `meta.json` → no re-ask next service
   start); reinstall toast after Anki-side delete, once per service start,
   gated on the Anki data dir existing; standalone mode (plugin removed →
-  theming continues, no notifications).
+  theming continues, no Omarchy notifications; a drift tooltip may still fire,
+  ticket 15).
+- **Drift smoke** (ticket 15): mocked retract-class inventory drift — one log
+  line + one transient tooltip, second start silent (state-dir signature
+  dedup); add-class drift log-only.
 - **Perf session** — the standing metrics per their defined methods
   ([performance.md](performance.md)): switch-to-reapply (real add-on, incl. the
   screen-recording frame-diff cross-check the spike left pending), add-on
