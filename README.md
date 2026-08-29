@@ -59,7 +59,7 @@ omarchy theme set (any trigger: menu, CLI, scheduler)
 ```
 
 The Omarchy plugin (Quickshell `service`) is the delivery half: with your consent
-it installs the bundled add-on into Anki.
+it installs the bundled add-on into Anki and keeps it updated.
 
 ## Requirements
 
@@ -79,12 +79,22 @@ add-on folder (`~/.local/share/Anki2/addons21/ankiya`). Nothing touches your
 Anki configuration before you say yes — not clicking leaves Anki untouched. Start
 Anki (or restart it, if it's already running) and it follows your theme.
 
+Updates flow in on their own: when the plugin updates, the installed add-on is
+brought up to date at the next shell restart or Anki start — whichever comes
+first. The same consent covers it, your Anki configuration stays untouched, and
+an add-on whose payload didn't change isn't rewritten at all. Deleted the add-on
+in Anki but kept the plugin? A notification offers to reinstall it; ignore it
+and Anki stays as it is.
+
 ## Remove
 
 Two halves, two steps:
 
 1. Remove the plugin: `omarchy plugin remove io.github.expri-commits.anki-theme`
 2. Remove the add-on from Anki: **Tools → Add-ons → Ankiya → Delete**
+
+Removing only the plugin leaves the add-on running inside Anki — it keeps
+theming, it just stops receiving updates. Step 2 is what turns the colors off.
 
 Restart Anki and it returns to its own theming — a running Anki keeps the
 colors already applied until it restarts. Optionally remove the plugin's state,
@@ -123,7 +133,7 @@ architecture decisions in [`docs/adr/`](docs/adr/).
   install and theme watching only.
 - **Add-on** — Python against Anki's own theme machinery: `tomllib`,
   `QFileSystemWatcher`, stdlib only. GUI-free logic is separated so pytest covers
-  the mapping and clamp rules (`tests/`).
+  the mapping, clamp, and update-sync rules (`tests/`).
 - **Tooling** — biome (JSON/JS), ruff (Python), qmllint/qmlformat (QML); tests run
   on the system python (the Anki runtime).
 

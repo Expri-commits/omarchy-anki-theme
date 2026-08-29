@@ -18,6 +18,42 @@ The Anki add-on (Python, in-process) — the live half that watches for theme
 changes and applies the palette inside Anki.
 _Avoid_: plugin (when inside Anki), extension
 
+### Update propagation
+
+**Payload**:
+The add-on's file tree as bundled inside the plugin — the single source of truth
+the installed copy under `addons21/ankiya/` is made from.
+_Avoid_: bundle, add-on package (when meaning the bundled tree)
+
+**Stamp**:
+The installed copy's identity and freshness record: `payload.json` inside
+`ankiya/`, shipping identity fields and carrying the `payloadHash` (content hash
+of the bundled payload tree) written at install or swap time.
+_Avoid_: version file, version stamp
+
+**Sync**:
+The one routine (`ankiya/sync.py`, stdlib-only, pure functions over paths) that
+installs, updates, and verifies the installed copy against the bundled payload.
+The only writer to `ankiya/`; driven by fresh code only (service mount, add-on
+startup).
+_Avoid_: updater, installer (sync is both)
+
+**Swap**:
+Replacing the installed copy by staging a fresh tree as a dot-prefixed sibling
+outside `addons21` and double-renaming it into place, preserving `meta.json`.
+_Avoid_: in-place update, overwrite
+
+**Bootloader**:
+The shape of `ankiya/__init__.py`: run sync first, then hand off to
+`runtime.start()` — so a payload update can land at Anki startup without a
+shell restart.
+_Avoid_: loader, self-update shim
+
+**Standalone mode**:
+An installed add-on whose plugin is gone: it keeps theming (it is self-sufficient
+for recoloring) but receives no updates and sends no notifications.
+_Avoid_: orphaned add-on, degraded mode
+
 ### Theming
 
 **Palette**:
