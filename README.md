@@ -130,7 +130,9 @@ Repo: `Expri-commits/omarchy-anki-theme`. The project was charted and decided on
 [wayfinder map](.scratch/anki-theme/map.md) — the map, its tickets, and the
 [research](.scratch/anki-theme/research/) notes are the full decision log.
 Performance measurements live in [`docs/performance.md`](docs/performance.md);
-architecture decisions in [`docs/adr/`](docs/adr/).
+architecture decisions in [`docs/adr/`](docs/adr/); the verification gate —
+what "full surface" is held to, and how — in
+[`docs/verification.md`](docs/verification.md).
 
 - **Plugin** — Quickshell `service` (`Service.qml`), kept thin on purpose: payload
   install and theme watching only.
