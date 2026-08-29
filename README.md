@@ -1,6 +1,10 @@
-# Anki Theme for Omarchy
+# Ankiya
 
 Anki, decked out in whatever Omarchy theme is active — live, full surface, no restart.
+
+*Ankiya* = *anki* (暗記, "memorization" — where Anki gets its name) + the shop
+suffix *-ya* (屋). Theming today; the shop stays open for whatever else Anki
+needs from Omarchy.
 
 <!-- flip-time: re-shoot both screenshot pairs with the shipped plugin, drop
      preview.png at the repo root, and uncomment every flip-time: block in this
@@ -78,13 +82,13 @@ say yes. Start Anki and it follows your theme.
 Two halves, two steps:
 
 1. Remove the plugin: `omarchy plugin remove io.github.expri-commits.anki-theme`
-2. Remove the add-on from Anki: **Tools → Add-ons → Anki Theme for Omarchy → Delete**
+2. Remove the add-on from Anki: **Tools → Add-ons → Ankiya → Delete**
 
 Anki immediately returns to its own theming.
 
 ## Configuration
 
-Open **Tools → Add-ons → Anki Theme for Omarchy → Config** in Anki:
+Open **Tools → Add-ons → Ankiya → Config** in Anki:
 
 | Key | Default | Meaning |
 | --- | --- | --- |
