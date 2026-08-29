@@ -1,0 +1,12 @@
+# Python tool config for the add-on half. The add-on runs inside Arch's anki
+# (system python 3.14), so tooling targets it — see AGENTS.md "Tooling gotchas".
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

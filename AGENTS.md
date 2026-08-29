@@ -30,5 +30,5 @@ Single-context: root `CONTEXT.md` plus `docs/adr/`. Use the glossary's vocabular
 
 ## Tooling gotchas
 
-- ruff and pytest are pending install (`sudo pacman -S ruff python-pytest`) — until then, flag the gap in the ticket rather than substituting another linter.
-- gh hangs through its mise shim in agent shells — call the direct binary under `~/.local/share/mise/installs/gh/*/gh_*/bin/gh` with `GH_HOST=github.com GH_PROMPT_DISABLED=1` and a timeout.
+- Python tooling runs on **system python** (the Anki runtime): invoke tests as `pytest` or `/usr/bin/python -m pytest`, never bare `python -m pytest` — agent shells resolve `python` to mise 3.14.6, which cannot see `aqt`. Keep ruff/pytest pacman-installed (`omarchy pkg add`), never mise-managed: mise-managed global python breaks system-python packages like anki itself (basecamp/omarchy#2831).
+- gh hangs through the Omarchy `~/.local/bin/gh` wrapper — it runs unversioned `mise use -g gh` (a network "latest" lookup) on every invocation; pinned mise tools are fine, this is not a general shim problem — call the direct binary under `~/.local/share/mise/installs/gh/*/gh_*/bin/gh` with `GH_HOST=github.com GH_PROMPT_DISABLED=1` and a timeout.
