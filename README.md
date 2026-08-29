@@ -63,7 +63,10 @@ it installs the bundled add-on into Anki and keeps it updated.
 
 ## Requirements
 
-- Omarchy. <!-- ticket-13: replace with the exact declared minimum version before publishing -->
+- Omarchy 4.0.1 or newer. Third-party plugin installs and the theme state
+  layout the add-on watches arrived in 4.0.0; 4.0.1 settled the notification
+  click-action that the consent prompt relies on. On an older Omarchy the
+  plugin stays inert and Anki keeps its own theming.
 - Anki 26.08 or newer (Qt6), with its profile directory at the default
   `~/.local/share/Anki2` (true for native installs such as the Arch package).
 
