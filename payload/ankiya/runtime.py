@@ -21,6 +21,11 @@ on this exact Anki build) onto the pure core from ticket 16. Delivery legs:
                content, so the engine script is also eval'd into every live
                AnkiWebView.
 
+Between the palette read and the mapping sits the clamp (tickets 08/18):
+``map_with_clamp`` nudges hostile foregrounds up to their WCAG floors —
+verbatim pass-through when the ``contrast_clamp`` config is off — and a
+flip of that config in the add-on dialog forces a re-apply.
+
 The watcher: ``QFileSystemWatcher`` on ``~/.local/state/omarchy/current`` —
 a theme swap is rm+mv of ``current/theme`` (a new inode), so the parent dir
 is the stable target — with a 150 ms debounce and a palette-digest guard.
@@ -52,7 +57,8 @@ from aqt.theme import theme_manager
 from aqt.webview import AnkiWebView
 
 from ankiya.cssgen import css_text, engine_script
-from ankiya.palette import Mapping, fingerprint, load_raw, map_palette
+from ankiya.palette import Mapping, fingerprint, load_raw
+from ankiya.theme_clamp import Adjustment, map_with_clamp
 
 # Folder identity locked by ticket 11; the add-on is installed as
 # addons21/ankiya, so module name, folder, and web-export key all coincide.
@@ -109,6 +115,10 @@ class Runtime:
                 if not self._hook_installed:
                     gui_hooks.webview_will_set_content.append(self._on_will_set_content)
                     self._hook_installed = True
+                # There is no config-change gui_hook in this Anki build; the
+                # addon manager calls per-package actions from the config
+                # dialog's accept(), with the new conf, only on real changes.
+                mw.addonManager.setConfigUpdatedAction(ADDON_PACKAGE, self._on_config_updated)
                 self._started = True
                 # The main window's webviews are created before add-ons load,
                 # so the _inject_user_script patch never saw their profiles —
@@ -140,6 +150,21 @@ class Runtime:
         self.contrast_clamp = True if clamp is None else bool(clamp)
         _log(f"config: contrast_clamp={self.contrast_clamp}")
 
+    def _on_config_updated(self, _new_conf: dict) -> None:
+        """The config dialog saved a change: re-read, and if the clamp
+        actually flipped, force a re-apply — the palette didn't change, the
+        policy did, so the digest guard must be bypassed."""
+        previous = self.contrast_clamp
+        self._read_config()
+        if self.contrast_clamp == previous:
+            return
+        _log(f"contrast_clamp flipped to {self.contrast_clamp} — re-applying")
+        self._digest = None
+        try:
+            self.apply("config")
+        except Exception:
+            _log(f"config apply crashed:\n{traceback.format_exc()}")
+
     # -- the apply -----------------------------------------------------------
 
     def apply(self, reason: str) -> bool:
@@ -158,7 +183,7 @@ class Runtime:
 
         errors: list[str] = []
         dark = mode == "dark"
-        mapping = self._map(palette)
+        mapping, clamp_adjustments = self._map(palette)
         css = css_text(mapping)
         views = 0
 
@@ -200,6 +225,7 @@ class Runtime:
                 "reason": reason,
                 "vars": len(mapping.vars),
                 "skipped": len(mapping.skipped),
+                "clamped": len(clamp_adjustments),
                 "engine_profiles": len(self._engine_scripts),
                 "views": views,
                 "errors": errors,
@@ -209,13 +235,15 @@ class Runtime:
         )
         return True
 
-    def _map(self, palette: dict[str, str]) -> Mapping:
-        """The apply path's palette preparation.
-
-        Ticket 18 wires the ``clamp_palette`` pre-pass here, gated on
-        ``self.contrast_clamp``; until then palettes map verbatim.
-        """
-        return map_palette(palette)
+    def _map(self, palette: dict[str, str]) -> tuple[Mapping, tuple[Adjustment, ...]]:
+        """The apply path's palette preparation: the ticket-08 clamp
+        (faithful pass-through when ``contrast_clamp`` is off), then the
+        locked mapping. Returns the mapping plus every clamp adjustment,
+        one log line each."""
+        mapping, adjustments = map_with_clamp(palette, self.contrast_clamp)
+        for adjustment in adjustments:
+            _log(adjustment.line())
+        return mapping, adjustments
 
     def _apply_qt_chrome(self, mapping: Mapping, dark: bool) -> None:
         mutated = 0

@@ -184,11 +184,16 @@ def main() -> int:
         end_to_end_ms = (switched["applied_at"] - t0) * 1000
 
         check(switched["errors"] == [], f"switch leg errors: {switched['errors']}")
-        # The target is a stock theme: full mapping, nothing skipped.
+        # The target is a stock theme: full mapping, nothing skipped, and
+        # the clamp pre-pass (stock-invisible by policy) adjusted nothing.
         check(
             switched["vars"] == len(VAR_RULES) and switched["skipped"] == 0,
             f"switch mapped {switched['vars']}+{switched['skipped']} vars, "
             f"expected {len(VAR_RULES)}+0",
+        )
+        check(
+            switched["clamped"] == 0,
+            f"clamp adjusted {switched['clamped']} values on a stock palette",
         )
         check(switched["views"] >= 1, "no open webview was restyled")
         check(
