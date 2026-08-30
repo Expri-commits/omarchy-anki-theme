@@ -24,11 +24,18 @@ def _pil():
 
 
 class Shot:
-    """One captured PNG window, in shot coordinates."""
+    """One captured PNG (a grim window capture or a widget render buffer),
+    in shot coordinates."""
 
-    def __init__(self, path) -> None:
-        self.path = str(path)
-        image = _pil().open(self.path)
+    def __init__(self, path=None, *, png: bytes | None = None) -> None:
+        if png is not None:
+            import io
+
+            self.path = "<widget grab>"
+            image = _pil().open(io.BytesIO(png))
+        else:
+            self.path = str(path)
+            image = _pil().open(self.path)
         self.size = image.size
         self._image = image.convert("RGB")
         self._pixels = self._image.load()

@@ -35,3 +35,29 @@ def gate_session(request):
         # Anki process would block every later run's preflight, and a theme
         # left switched breaks the hygiene contract docs/verification.md sets.
         session.teardown()
+
+
+@pytest.fixture(scope="session")
+def gate3_session(request):
+    """Tier 3's matrix instance — same shape as tier 2's, plus user-theme
+    forks and the mid-session stop (tier 3's down legs launch their own
+    instances; see gate3_down)."""
+    from gate_harness import GateSession
+
+    session = GateSession(no_restore=request.config.getoption("--no-restore"))
+    try:
+        session.preflight()
+        session.launch()
+        yield session
+    finally:
+        session.teardown()
+
+
+@pytest.fixture(scope="session")
+def gate3_down(gate3_session):
+    """Gateway to the Anki-down legs: stop the matrix instance and restore
+    the desktop theme early, so the legs can launch scratch instances of
+    their own (the preflight contract forbids concurrent Ankis)."""
+    gate3_session.stop_anki()
+    gate3_session.restore_theme()
+    return gate3_session

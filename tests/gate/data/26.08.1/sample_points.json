@@ -1,16 +1,34 @@
 {
   "anki_version": "26.08.1",
   "characterized": {
-    "_comment": "Locked from characterization runs (docs/verification.md, characterize-then-lock). Facts: the deck current row paints --border-subtle opaque; a.deck names paint --fg; the seeded notetype's authored card background (reported by the gate add-on's seed command) is the card-face oracle — 26.08.1's stock Basic template paints no card background at all (bare {{Front}}), so the stock card-face constants from the ticket-06 live-install observation do not apply to a seeded base."
+    "_comment": "Locked from characterization runs (docs/verification.md, characterize-then-lock). Facts: the deck current row paints --border-subtle opaque; a.deck names paint --fg; the seeded notetype's authored card background (reported by the gate add-on's seed command) is the card-face oracle — 26.08.1's stock Basic template paints no card background at all (bare {{Front}}), so the stock card-face constants from the ticket-06 live-install observation do not apply to a seeded base. Tier-3 additions (ticket 23): the QMenu QSS paints menu bg = CANVAS_OVERLAY and the selected item = HIGHLIGHT_BG (selection @ 0.5) over it — an alpha blend, unlike the deck row; menu item text keeps QPalette WindowText (= FG). Popup surfaces sample the widget's own render buffer (the add-on's menu.grab() PNG), not a grim capture: Wayland clients cannot know a popup's real compositor position (mapToGlobal is a guess — measured 700+ px off), and the compositor dims the window behind an open popup, so a global-rect capture grabs dimmed pixels from the wrong place; the highlight is landed synthetically (setActiveAction + a synthetic MouseMove — Wayland popups never see a real hover). The File menu in 26.08.1 has no New Deck (deck creation lives in the web toolbar); its actions are Switch Profile/Import/Export/Create Backup/Revert to Backup/Exit — the highlight anchor is Import... Anki's below-floor polarity (add-on inert) follows the desktop portal; the legs run after the theme restore with the dark desktop up, so the defaults oracle reads the 'dark' slots of aqt.colors in the test process (never remembered hexes). Stats (ticket 23 characterization): 26.08.1 opens the LEGACY flot stats page (jQuery + canvas, no svelte graphs); chart series colors flow through theme_manager._update_stat_colors from the mapped STATE_* vars — the Added graph #intro draws today's additions as colLearn = STATE_NEW (aqt/theme.py), rendered by flot as a bar with fill=0.7 over the page canvas (anki/stats.py), so the series oracle is the palette's STATE_NEW composited at 0.7 over CANVAS (the seed answers its card once to make one bar)."
   },
   "probes": {
-    "deck": { "target": "main", "js": "probes/deck.js" },
+    "deck": {
+      "target": "main",
+      "js": "probes/deck.js"
+    },
     "review": {
       "target": "main",
       "js": "probes/review.js",
       "bottom_js": "probes/bottom.js"
     },
-    "add": { "target": "add", "js": "probes/add.js" }
+    "add": {
+      "target": "add",
+      "js": "probes/add.js"
+    },
+    "stats": {
+      "target": "stats",
+      "js": "probes/stats.js",
+      "pre_js": "probes/scroll_intro.js",
+      "settle_ms": 800
+    },
+    "prefs": {
+      "target": "prefs"
+    },
+    "menu": {
+      "target": "menu"
+    }
   },
   "points": {
     "deck": {
@@ -27,10 +45,19 @@
         "fx": 0.5,
         "fy": 0.5
       },
-      "deck_name": { "view": "main", "anchor": "dom.link", "scan": true }
+      "deck_name": {
+        "view": "main",
+        "anchor": "dom.link",
+        "scan": true
+      }
     },
     "menubar": {
-      "bg": { "view": "qt", "anchor": "qt.menubar", "fx": 0.97, "fy": 0.5 },
+      "bg": {
+        "view": "qt",
+        "anchor": "qt.menubar",
+        "fx": 0.97,
+        "fy": 0.5
+      },
       "menu_text": {
         "view": "qt",
         "anchor": "qt.action",
@@ -61,14 +88,74 @@
       }
     },
     "add": {
-      "page_bg": { "view": "add", "fx": 0.985, "fy": 0.5 },
+      "page_bg": {
+        "view": "add",
+        "fx": 0.985,
+        "fy": 0.5
+      },
       "input_fill": {
         "view": "add",
         "anchor": "dom.field0",
         "fx": 0.5,
         "fy": 0.5
       },
-      "focus_ring": { "view": "add", "anchor": "dom.field0", "scan_ring": true }
+      "focus_ring": {
+        "view": "add",
+        "anchor": "dom.field0",
+        "scan_ring": true
+      }
+    },
+    "stats": {
+      "page_bg": {
+        "view": "stats",
+        "fx": 0.96,
+        "fy": 0.5
+      },
+      "series": {
+        "view": "stats",
+        "anchor": "dom.intro_canvas",
+        "fx": 0.5,
+        "fy": 0.5
+      }
+    },
+    "prefs": {
+      "window_bg": {
+        "view": "qt",
+        "anchor": "qt.dialog",
+        "fx": 0.99,
+        "fy": 0.55
+      },
+      "pane_bg": {
+        "view": "qt",
+        "anchor": "qt.tabs",
+        "fx": 0.98,
+        "fy": 0.6
+      }
+    },
+    "menu": {
+      "bg": {
+        "view": "menu",
+        "fx": 0.5,
+        "fy": 0.99,
+        "dy": -2
+      },
+      "text": {
+        "view": "menu",
+        "anchor": "menu.action",
+        "action": "Import...",
+        "scan": true
+      },
+      "highlight_fill": {
+        "view": "menu",
+        "anchor": "menu.active",
+        "fx": 0.93,
+        "fy": 0.5
+      },
+      "highlight_text": {
+        "view": "menu",
+        "anchor": "menu.active",
+        "scan": true
+      }
     }
   },
   "contrast": {
@@ -77,6 +164,21 @@
       "text": ["deck", "deck_name"],
       "fill": ["deck", "canvas"],
       "floor": 4.5
+    },
+    "menu_text_vs_menu_bg": {
+      "text": ["menu", "text"],
+      "fill": ["menu", "bg"],
+      "floor": 4.5
     }
+  },
+  "below_floor": {
+    "_comment": "The add-on-inert render asserts against Anki's own defaults, read live from aqt.colors in the test process (point name -> aqt var). The polarity the legs lock: dark.",
+    "night_mode": "dark",
+    "deck_canvas": "CANVAS",
+    "menubar_bg": "CANVAS",
+    "menubar_text": "FG"
+  },
+  "data_colors": {
+    "_comment": "Characterize-then-lock values that are NOT palette-derived. Empty as of ticket 23's final characterization: the stats chart series is palette-mapped (STATE_NEW at flot's fill=0.7, see characterized) and the Preferences surface turned out to be the NATIVE Qt dialog (tab pane = CANVAS_ELEVATED, dialog = QPalette Window = CANVAS) — its sveltekit page hides on a non-current Labs tab, so the prefs button (--bs-* seam, ledger row 2) is not part of the rendered surface; the seam observation moves to the gallery review of the Labs tab."
   }
 }

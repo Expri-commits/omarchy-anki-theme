@@ -1,8 +1,7 @@
 """Tier 1 — the clamp (wayfinder ticket 08 → implementation 18).
 
-Fixtures P1–P5 are the synthetic pathological palettes ticket 08 seeded:
-one per guard plus the two infeasible-background shapes. Stock palettes
-appear as the regression that keeps the floors stock-invisible.
+The P1–P5 fixtures live in pathological.py, shared verbatim with tier 3's
+render legs (the gate asserts the render against this module's prediction).
 """
 
 import colorsys
@@ -18,26 +17,8 @@ from ankiya.theme_clamp import (
     clamp_palette,
     map_with_clamp,
 )
+from pathological import CHAIN, P1, P2, P3, P4, P5, base_palette
 from theme_fixtures import THEMES, theme_palette
-
-
-def palette(**overrides: str) -> dict[str, str]:
-    """A healthy catppuccin-shaped base the clamp never touches."""
-    base = {
-        "background": "#1e1e2e",
-        "dark_background": "#181825",
-        "darker_background": "#11111b",
-        "lighter_background": "#313244",
-        "foreground": "#cdd6f4",
-        "muted": "#585b70",
-        "selection": "#45475a",
-        "accent": "#89b4fa",
-        "blue": "#89b4fa",
-        # Equal to blue — the `white`-theme fallback shape; healthy either way.
-        "bright_blue": "#89b4fa",
-    }
-    base.update(overrides)
-    return base
 
 
 def hls(color: str) -> tuple[float, float, float]:
@@ -54,65 +35,9 @@ def assert_nudge_preserved_hue_and_sat(old: str, new: str) -> None:
     assert l0 != l1, "the nudge did not move"
 
 
-# The pathological fixtures.
-
-# P1 — foreground invisible on a (dark) background trio: feasible, the nudge
-# lifts it to the 4.5 floor against the lightest background. Selection/accent
-# are light so the on-tint pass stays quiet (the chained case is its own test).
-P1 = palette(foreground="#202030", selection="#89b4fa")
-
-# The chained fixture: P1 with the base mid-dark selection — the nudged
-# foreground still cannot read on it, so guard 3 extends afterwards.
-CHAIN = palette(foreground="#202030")
-
-# P2 — link invisible on the background (link == background exactly). The
-# background family is all light so the dark foreground clears guard 1 and
-# only the link guard fires.
-P2 = palette(
-    foreground="#1e1e2e",
-    background="#89b4fa",
-    dark_background="#7aa3f0",
-    darker_background="#6b93e6",
-    blue="#89b4fa",
-    bright_blue="#89b4fa",
-)
-
-# P3 — mid-luminance accent and selection: both base on-tint candidates fall
-# below 3.0, so the amendment extends the candidates; nothing else fails.
-P3 = palette(
-    foreground="#d0d0d0",
-    background="#4a4a4a",
-    dark_background="#2a2a2a",
-    darker_background="#1a1a1a",
-    selection="#909090",
-    accent="#909090",
-)
-
-# P4 — straddling backgrounds: two light + one dark, no foreground clears 4.5
-# against all three (pairwise band violated) → max-min + the honest log line.
-P4 = palette(
-    foreground="#808080",
-    background="#e0e0e0",
-    dark_background="#d0d0d0",
-    darker_background="#303030",
-    selection="#45475a",
-    accent="#303030",
-    blue="#1a1a1a",
-    bright_blue="#1a1a1a",
-)
-
-# P5 — the dead-zone trio: passes the extremes-only test (#ffffff/#010101
-# admit a narrow foreground band) but the mid-luminance #595959 kills it.
-P5 = palette(
-    foreground="#808080",
-    background="#ffffff",
-    dark_background="#595959",
-    darker_background="#010101",
-    selection="#2a2a2a",
-    accent="#2a2a2a",
-    blue="#1a1a1a",
-    bright_blue="#1a1a1a",
-)
+# The fixtures themselves are pathological.py's — imported above. The local
+# name keeps the historical call sites readable.
+palette = base_palette
 
 
 # Stock invisibility — the floors hold below every stock palette.

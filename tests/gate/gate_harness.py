@@ -1,16 +1,19 @@
-"""Tier-2 gate harness (ticket 22, docs/verification.md §Tier 2).
+"""Gate harness (tickets 22/23, docs/verification.md §Tier 2/§Tier 3).
 
-Drives one real Anki on a dedicated scratch base through the whole live leg:
+Drives real Anki instances on dedicated scratch bases through the live legs:
 launch (seeded base, dev-linked payload, the gate control add-on), command
-round-trips, live Omarchy theme switches with timing capture, and window
-screenshots via grim (the ticket-09 method: focus, then capture the client
-geometry — the composited pixels are exactly what rendered).
+round-trips, live Omarchy theme switches with timing capture, and screenshots
+via grim (the ticket-09 method: focus, then capture the geometry — the
+composited pixels are exactly what rendered). Tier 3 adds user-theme forks
+for the pathological palettes, dialog/menu geometry capture, and a mid-
+session stop so the Anki-down legs (propagation, drift, below-floor) can
+launch their own instances.
 
-Fixture hygiene is the harness's contract: the original theme is restored and
-the scratch base removed on teardown, unless the run passed --no-restore
-(escape hatch for debugging a failed run). Every probe result, applied record
-and screenshot is kept under tests/gate/artifacts/<run>/ for tier 3 to build
-on — that path is gitignored.
+Fixture hygiene is the harness's contract: the original theme is restored,
+the user-theme forks removed and the scratch base deleted on teardown, unless
+the run passed --no-restore (escape hatch for debugging a failed run). Every
+probe result, applied record and screenshot is kept under
+tests/gate/artifacts/<run>/ — that path is gitignored.
 """
 
 from __future__ import annotations
@@ -31,6 +34,8 @@ DATA_DIR = GATE_DIR / "data"
 ARTIFACTS = GATE_DIR / "artifacts"
 FIXTURE_THEMES = REPO / "tests" / "fixtures" / "themes"
 SYSTEM_THEMES = pathlib.Path("/usr/share/omarchy/themes")
+USER_THEMES = pathlib.Path.home() / ".config/omarchy/themes"
+GATE_THEME_PREFIX = "ankiya-gate-"
 
 STATE_DIR = pathlib.Path.home() / ".local/state/omarchy/current"
 THEME_NAME_FILE = STATE_DIR / "theme.name"
@@ -44,9 +49,9 @@ PAINT_SETTLE_S = 1.2  # webview repaint after an apply, before capture
 # Path setup (payload/, tests/, vendored PIL) lives in tests/gate/conftest.py.
 from smoke_live_switch import seed_base  # noqa: E402
 
-# The live leg's palettes (docs/verification.md): Catppuccin dark, Latte
-# light, and Gruvbox as the same-polarity switch target.
-GATE_THEMES = ("catppuccin", "catppuccin-latte", "gruvbox")
+# The stock themes each pathological fork forks (mode-matched, so the theme's
+# hyprland/terminal template regeneration starts from a coherent palette).
+FORK_BASES = {"dark": "catppuccin", "light": "catppuccin-latte"}
 
 
 def to_display_name(dir_name: str) -> str:
@@ -67,6 +72,33 @@ def load_sample_map(version: str) -> dict:
             "add it (docs/verification.md infrastructure notes)"
         )
     return json.loads(map_file.read_text())
+
+
+def install_user_theme(slug: str, palette: dict[str, str], mode: str) -> str:
+    """Register a pathological palette as a real Omarchy user theme.
+
+    A minimal fork of a stock theme — its ``colors.toml`` replaced, its
+    backgrounds symlinked, and **nothing else**: a full copy would stage the
+    stock theme's ``vscode.json``/``neovim.lua``, which the theme-set hooks
+    apply to user state (an extension install, an nvim colorscheme). Missing
+    files simply leave those apps on whatever they had. Returns the display
+    name ``omarchy theme set`` takes.
+    """
+    if not slug.startswith(GATE_THEME_PREFIX):
+        raise ValueError(f"gate user themes must be named {GATE_THEME_PREFIX}* — got {slug!r}")
+    base = FORK_BASES.get(mode) or FORK_BASES["dark"]
+    source = SYSTEM_THEMES / base
+    dest = USER_THEMES / slug
+    if dest.exists():
+        raise RuntimeError(f"user theme {dest} already exists — remove it first")
+    dest.mkdir(parents=True)
+    shutil.copy2(source / "colors.toml", dest / "colors.toml")
+    if (source / "backgrounds").is_dir():
+        (dest / "backgrounds").symlink_to(source / "backgrounds")
+    lines = [f'mode = "{mode}"']
+    lines += [f'{key} = "{value}"' for key, value in sorted(palette.items())]
+    (dest / "colors.toml").write_text("\n".join(lines) + "\n")
+    return to_display_name(slug)
 
 
 class GateSession:
@@ -90,6 +122,12 @@ class GateSession:
         self._shot_seq = 0
         self.map = load_sample_map(anki_version())
         self.startup_record: dict | None = None
+        # Slugs this session registered under ~/.config/omarchy/themes;
+        # teardown removes them (after the original theme is restored).
+        self.user_themes: list[str] = []
+        # Set by stop_anki() — teardown's restore still runs, the kill skips.
+        self._stopped = False
+        self._meta_snapshot: bytes | None = None
 
     # -- preflight -----------------------------------------------------------
 
@@ -101,14 +139,14 @@ class GateSession:
         for tool in ("grim", "hyprctl", "omarchy"):
             if shutil.which(tool) is None:
                 raise RuntimeError(f"required tool {tool!r} not on PATH")
-        for theme in GATE_THEMES:
-            system = SYSTEM_THEMES / theme / "colors.toml"
-            fixture = FIXTURE_THEMES / theme / "colors.toml"
+        for theme_dir in sorted(p.name for p in FIXTURE_THEMES.iterdir() if p.is_dir()):
+            system = SYSTEM_THEMES / theme_dir / "colors.toml"
+            fixture = FIXTURE_THEMES / theme_dir / "colors.toml"
             if not system.exists():
-                raise RuntimeError(f"stock theme {theme!r} missing at {system}")
+                raise RuntimeError(f"stock theme {theme_dir!r} missing at {system}")
             if system.read_text() != fixture.read_text():
                 raise RuntimeError(
-                    f"vendored fixture for {theme!r} drifted from {system} — re-vendor it "
+                    f"vendored fixture for {theme_dir!r} drifted from {system} — re-vendor it "
                     "(tests/fixtures/themes/README.md) before oracles mean anything"
                 )
         self.original_theme = THEME_NAME_FILE.read_text().strip()
@@ -120,6 +158,12 @@ class GateSession:
         self.run_dir.mkdir(parents=True)
         self.base.mkdir(parents=True)
         seed_base(self.base)
+        # 26.08.1 stores add-on user config INSIDE the add-on folder
+        # (meta.json's "config" key) — and the gate dev-links the payload
+        # from the repo, so a config write during a run (the faithful leg's
+        # set_clamp) would dirty the repo and leak into the next run.
+        # Snapshot before launch; teardown puts it back.
+        self._meta_snapshot = (PAYLOAD / "meta.json").read_bytes()
         addons = self.base / "addons21"
         addons.mkdir()
         # Dev-link the payload (the smoke pattern) and pin the bootloader's
@@ -168,7 +212,12 @@ class GateSession:
             f"startup apply {self.startup_record['apply_ms']}ms"
         )
 
-    def teardown(self) -> None:
+    def stop_anki(self) -> None:
+        """Stop the scratch instance mid-session (the Anki-down legs launch
+        their own). Teardown still restores the theme and cleans up."""
+        if self._stopped:
+            return
+        self._stopped = True
         if self.anki is not None and self.anki.poll() is None:
             self.anki.send_signal(signal.SIGTERM)
             try:
@@ -178,6 +227,49 @@ class GateSession:
                 self.anki.wait()
         if self._anki_log_handle is not None:
             self._anki_log_handle.close()
+            self._anki_log_handle = None
+        print("gate: scratch instance stopped for the Anki-down legs")
+
+    def restore_theme(self) -> None:
+        """Switch back to the session's original theme early (the down legs
+        shouldn't sit on a pathological palette). Idempotent with teardown."""
+        if self.no_restore or not self.original_theme:
+            return
+        if THEME_NAME_FILE.read_text().strip() == self.original_theme:
+            return
+        subprocess.run(
+            ["omarchy", "theme", "set", self.original_theme],
+            capture_output=True,
+            check=False,
+        )
+        print(f"gate: restored {self.original_theme!r} early")
+
+    def register_user_theme(self, slug: str, palette: dict[str, str], mode: str) -> str:
+        display = install_user_theme(slug, palette, mode)
+        self.user_themes.append(slug)
+        return display
+
+    def teardown(self) -> None:
+        if not self._stopped and self.anki is not None and self.anki.poll() is None:
+            self.anki.send_signal(signal.SIGTERM)
+            try:
+                self.anki.wait(timeout=30)
+            except subprocess.TimeoutExpired:
+                self.anki.kill()
+                self.anki.wait()
+        if self._anki_log_handle is not None:
+            self._anki_log_handle.close()
+        if self._meta_snapshot is not None:
+            meta = PAYLOAD / "meta.json"
+            if meta.read_bytes() != self._meta_snapshot:
+                meta.write_bytes(self._meta_snapshot)
+                print("gate: restored payload meta.json (a config write leaked into it)")
+            self._meta_snapshot = None
+        for slug in self.user_themes:
+            shutil.rmtree(USER_THEMES / slug, ignore_errors=True)
+        if self.user_themes:
+            print(f"gate: removed user themes {[s for s in self.user_themes]}")
+            self.user_themes = []
         if self.no_restore:
             left = THEME_NAME_FILE.read_text().strip()
             print(f"gate: --no-restore — theme left at {left!r}, scratch kept at {self.scratch}")
@@ -230,13 +322,13 @@ class GateSession:
     def probe(self, surface: str, overrides: dict | None = None):
         """Run the versioned DOM probe for a surface and stash its result.
 
-        The sample map names probe scripts (``js``/``bottom_js``) as files
-        next to it under data/<anki-version>/; overrides swap any spec field,
-        e.g. a dump script while characterizing.
+        The sample map names probe scripts (``js``/``bottom_js``/``pre_js``)
+        as files next to it under data/<anki-version>/; overrides swap any
+        spec field, e.g. a dump script while characterizing.
         """
         probe_spec = dict(self.map["probes"][surface])
         probe_spec.update(overrides or {})
-        for key in ("js", "bottom_js"):
+        for key in ("js", "bottom_js", "pre_js"):
             if key in probe_spec:
                 probe_spec[key] = (DATA_DIR / anki_version() / probe_spec[key]).read_text()
         result = self.cmd("probe", probe_spec)
@@ -312,37 +404,50 @@ class GateSession:
         # so t0 is the conservative fallback.
         t_swap = swap.get("t", t0)
         (self.run_dir / f"switch-{theme_dir}.json").write_text(
-            json.dumps(
-                {**record, "t0": t0, "t_swap": t_swap, "t_set_done": t_set_done}, indent=1
-            )
+            json.dumps({**record, "t0": t0, "t_swap": t_swap, "t_set_done": t_set_done}, indent=1)
         )
         time.sleep(PAINT_SETTLE_S)
         return record, t_swap, t_set_done
 
     # -- capture -------------------------------------------------------------
 
-    def _find_client(self, want_add: bool) -> dict | None:
+    # Window-title discriminators per capture target; "main" is the Anki
+    # window matching none of the dialog titles (largest wins).
+    CAPTURE_TITLES = {"add": "Add", "stats": "Statistics", "prefs": "Preferences"}
+
+    def _find_client(self, target: str) -> dict | None:
         out = subprocess.run(
             ["hyprctl", "-j", "clients"], capture_output=True, text=True, check=True
         ).stdout
+        exclude = (
+            set(self.CAPTURE_TITLES.values()) if target == "main" else {self.CAPTURE_TITLES[target]}
+        )
+        fallback = None
         for client in json.loads(out):
             if client.get("class") != "anki" or not client.get("mapped"):
                 continue
-            if ("Add" in (client.get("title") or "")) == want_add:
+            title = client.get("title") or ""
+            if target == "main":
+                if any(word in title for word in exclude):
+                    continue
+                area = client["size"][0] * client["size"][1]
+                if fallback is None or area > fallback["size"][0] * fallback["size"][1]:
+                    fallback = client
+                continue
+            if self.CAPTURE_TITLES[target] in title:
                 return client
-        return None
+        return fallback
 
     def capture(self, target: str, label: str) -> pathlib.Path:
         """Screenshot the target's window: focus it, then grim its geometry."""
-        want_add = target == "add"
         client = None
         deadline = time.monotonic() + 10.0
         while client is None and time.monotonic() < deadline:
-            client = self._find_client(want_add)
+            client = self._find_client(target)
             if client is None:
                 time.sleep(0.3)
         if client is None:
-            raise RuntimeError(f"no {'Add ' if want_add else 'main '}window to capture")
+            raise RuntimeError(f"no {target} window to capture")
         # Hyprland ≥0.55 speaks Lua here (`dispatch X Y` is gone); and hyprctl
         # prints ok for no-op dispatches, so focus is verified by observed
         # effect (activewindow), never by exit code.
@@ -362,17 +467,17 @@ class GateSession:
             ).stdout
             try:
                 focused = json.loads(active)["address"] == client["address"]
-            except (ValueError, KeyError):
+            except ValueError, KeyError:
                 focused = False
             if focused:
                 break
             time.sleep(0.2)
         if not focused:
-            raise RuntimeError(f"could not focus the {'Add' if want_add else 'main'} window")
+            raise RuntimeError(f"could not focus the {target} window")
         time.sleep(0.4)
         # Re-query after the focus loop: up to seconds passed since the first
         # read, and a layout shift in between would silently mis-frame grim.
-        fresh = self._find_client(want_add)
+        fresh = self._find_client(target)
         if fresh is not None and fresh["address"] == client["address"]:
             client = fresh
         at, size = client["at"], client["size"]

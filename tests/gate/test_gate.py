@@ -32,130 +32,14 @@ sys.path.insert(0, str(GATE_DIR))
 
 from ankiya.palette import VAR_RULES  # noqa: E402
 from oracles import ThemeOracle, rgb  # noqa: E402
-from sampling import (  # noqa: E402
-    TOLERANCE,
-    Shot,
-    assert_color,
-    channel_delta,
-    contrast_ratio,
-    scan_for_color,
-)
+from points import sample as _sample  # noqa: E402
+from sampling import Shot, contrast_ratio  # noqa: E402
 
 pytestmark = pytest.mark.gate
 
 APPLY_BUDGET_MS = 50.0
 SWAP_TO_RECOLOR_S = 0.250
 STARTUP_BUDGET_MS = 100.0
-
-
-# -- sample-map point resolution ---------------------------------------------
-
-
-def _dom(probe: dict, view: str) -> dict:
-    entry = probe.get("dom", {}).get(view)
-    if not entry or not entry.get("ok"):
-        raise AssertionError(f"DOM probe for view {view!r} missing or failed: {entry}")
-    return entry["result"]
-
-
-def _shot_offset(session, probe: dict, shot: Shot) -> tuple[int, int]:
-    dx, dy = session.shot_offset(shot, probe["window"])
-    if dx < 0 or dy < 0:
-        raise AssertionError(
-            f"shot {shot.size} smaller than window {probe['window']} — capture mismatch"
-        )
-    return dx, dy
-
-
-def _window_xy(session, probe: dict, surface: str, point_name: str) -> tuple[float, float]:
-    spec = session.map["points"][surface][point_name]
-    if spec["view"] == "qt":
-        anchor = spec["anchor"]
-        if anchor == "qt.menubar":
-            x, y, w, h = probe["qt"]["menubar"]
-        elif anchor == "qt.action":
-            actions = probe["qt"].get("menubar_actions", [])
-            wanted = spec["action"]
-            # QMenuBar action texts carry & mnemonics ("&Help")
-            rects = [a["rect"] for a in actions if a["text"].replace("&", "") == wanted]
-            if not rects:
-                raise AssertionError(
-                    f"{surface}/{point_name}: no menubar action {wanted!r} in "
-                    f"{[a['text'] for a in actions]}"
-                )
-            x, y, w, h = rects[0]
-        else:
-            raise AssertionError(f"{surface}/{point_name}: unknown qt anchor {anchor!r}")
-    else:
-        view = spec["view"]
-        dom = _dom(probe, view)
-        dpr = dom.get("dpr") or 1.0
-        vx, vy, vw, vh = probe["views"][view]
-        anchor = spec.get("anchor")
-        if anchor:
-            rect = dom[anchor.removeprefix("dom.")]
-            x = vx + (rect["x"] + rect["w"] * spec.get("fx", 0.5) + spec.get("dx", 0)) * dpr
-            y = vy + (rect["y"] + rect["h"] * spec.get("fy", 0.5) + spec.get("dy", 0)) * dpr
-        else:
-            x = vx + (vw / dpr) * spec.get("fx", 0.5)
-            y = vy + (vh / dpr) * spec.get("fy", 0.5)
-    return x, y
-
-
-def _point(session, probe: dict, surface: str, point_name: str, shot: Shot) -> tuple[int, int]:
-    x, y = _window_xy(session, probe, surface, point_name)
-    dx, dy = _shot_offset(session, probe, shot)
-    return int(round(x)) + dx, int(round(y)) + dy
-
-
-def _scan_region(
-    session, probe: dict, surface: str, point_name: str, shot: Shot
-) -> tuple[int, int, int, int]:
-    """The shot-coordinates region a scan point searches: the anchor rect
-    (DOM or menubar action) for glyph scans, the 6px strip just left of the
-    anchor for focus rings (the ring is the element's border)."""
-    spec = session.map["points"][surface][point_name]
-    if spec["view"] == "qt":
-        actions = probe["qt"].get("menubar_actions", [])
-        rects = [
-            a["rect"] for a in actions if a["text"].replace("&", "") == spec["action"]
-        ]
-        if not rects:
-            raise AssertionError(f"{surface}/{point_name}: action {spec['action']!r} not found")
-        x, y, w, h = rects[0]
-    else:
-        view = spec["view"]
-        dom = _dom(probe, view)
-        dpr = dom.get("dpr") or 1.0
-        vx, vy, _vw, _vh = probe["views"][view]
-        rect = dom[spec["anchor"].removeprefix("dom.")]
-        x = vx + rect["x"] * dpr
-        y = vy + rect["y"] * dpr
-        w = rect["w"] * dpr
-        h = rect["h"] * dpr
-    dx, dy = _shot_offset(session, probe, shot)
-    x, y, w, h = x + dx, y + dy, w, h
-    if spec.get("scan_ring"):
-        # The focused field's ring (a CSS outline) paints in the 1-2 px
-        # around the rect's edge — cover x-3..x so the ring column is in.
-        return int(x - 3), int(y + 2), 4, int(h - 4)
-    return int(x) + 1, int(y) + 1, int(w) - 2, int(h) - 2
-
-
-def _sample(session, probe, surface, point_name, shot, expected, scan=False):
-    """One sample-map point → (xy, sampled rgb), asserted against `expected`."""
-    if scan:
-        region = _scan_region(session, probe, surface, point_name, shot)
-        xy, sample = scan_for_color(shot, region, expected)
-        delta = channel_delta(sample, expected)
-        if delta > TOLERANCE:
-            raise AssertionError(
-                f"{surface}/{point_name}: closest pixel rgb{sample} at {xy} still "
-                f"{delta} > {TOLERANCE}/channel from expected rgb{expected} ({shot.path})"
-            )
-        return xy, sample
-    xy = _point(session, probe, surface, point_name, shot)
-    return xy, assert_color(surface, point_name, shot, xy, expected)
 
 
 # -- threshold + record asserts ----------------------------------------------
@@ -165,8 +49,7 @@ def assert_switch_record(record: dict, t_swap: float, oracle: ThemeOracle, leg: 
     where = f"switch leg {leg!r}"
     assert record["errors"] == [], f"{where}: apply errors {record['errors']}"
     assert record["vars"] == len(VAR_RULES) and record["skipped"] == 0, (
-        f"{where}: mapped {record['vars']}+{record['skipped']} vars, "
-        f"expected {len(VAR_RULES)}+0"
+        f"{where}: mapped {record['vars']}+{record['skipped']} vars, expected {len(VAR_RULES)}+0"
     )
     assert record["clamped"] == 0, f"{where}: clamp adjusted a stock palette"
     assert record["dark"] == oracle.dark, f"{where}: polarity mismatch"
@@ -189,14 +72,12 @@ def assert_switch_record(record: dict, t_swap: float, oracle: ThemeOracle, leg: 
 def assert_deck_and_menubar(session, oracle: ThemeOracle, label: str) -> None:
     probe = session.probe("deck")
     shot = Shot(session.capture("main", label))
-    canvas_xy, canvas = _sample(
-        session, probe, "deck", "canvas", shot, oracle.canvas
-    )
+    canvas_xy, canvas = _sample(session, probe, "deck", "canvas", shot, oracle.canvas)
     _sample(session, probe, "deck", "row_fill", shot, oracle.current_row)
-    _name_xy, name = _sample(
-        session, probe, "deck", "deck_name", shot, oracle.fg, scan=True
-    )
-    _sample(session, probe, "menubar", "bg", shot, oracle.canvas)
+    _name_xy, name = _sample(session, probe, "deck", "deck_name", shot, oracle.fg, scan=True)
+    # The menubar's fill is a scan, not a fixed point: window width varies
+    # with the layout, so a fractional x could sit on a menu label's glyphs.
+    _sample(session, probe, "menubar", "bg", shot, oracle.canvas, scan=True)
     _sample(session, probe, "menubar", "menu_text", shot, oracle.fg, scan=True)
 
     # Contrast from the render itself (docs/verification.md): the sampled
@@ -230,9 +111,7 @@ def assert_editor(session, oracle: ThemeOracle, label: str) -> None:
     shot = Shot(session.capture("add", label))
     _sample(session, probe, "add", "page_bg", shot, oracle.canvas)
     _sample(session, probe, "add", "input_fill", shot, oracle.editor_input_fill)
-    _sample(
-        session, probe, "add", "focus_ring", shot, oracle.focus_ring, scan=True
-    )
+    _sample(session, probe, "add", "focus_ring", shot, oracle.focus_ring, scan=True)
 
 
 # -- the legs ------------------------------------------------------------------
@@ -247,8 +126,7 @@ def test_startup_sanity(gate_session):
     assert record is not None
     assert record["errors"] == [], f"startup apply errors: {record['errors']}"
     assert record["vars"] + record["skipped"] == len(VAR_RULES), (
-        f"startup accounted {record['vars']}+{record['skipped']} vars, "
-        f"expected {len(VAR_RULES)}"
+        f"startup accounted {record['vars']}+{record['skipped']} vars, expected {len(VAR_RULES)}"
     )
     assert record["apply_ms"] <= STARTUP_BUDGET_MS, (
         f"startup apply took {record['apply_ms']}ms (budget {STARTUP_BUDGET_MS}ms)"
