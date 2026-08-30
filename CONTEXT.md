@@ -55,6 +55,28 @@ for recoloring) but receives no updates and sends no notifications, except the
 in-Anki drift notice (ticket 15).
 _Avoid_: orphaned add-on, degraded mode
 
+### The service half
+
+**Gate**:
+The service's one decision pass (`service/gate.py`) at every service start —
+version floor, then Anki detection, then consent, then deleted-in-Anki, else
+mount Sync — emitted as one JSON line (with the acting outcome's complete
+`exec` argv) that the QML relays.
+_Avoid_: startup check, preflight
+
+**Grant**:
+The consent toast's click action (`service/grant.py`): record Consent, then
+mount Sync as a subprocess — the click completes the whole install without
+the service being alive.
+_Avoid_: installer callback, consent handler
+
+**Consent**:
+The recorded permission to install and keep updated the add-on
+(`consent.json` in the plugin state dir, written only by Grant): asked once
+per service start while unanswered, and only when Anki's data dir exists.
+Before it, the service writes nothing at all.
+_Avoid_: opt-in, permission (when meaning the record)
+
 ### Theming
 
 **Palette**:
