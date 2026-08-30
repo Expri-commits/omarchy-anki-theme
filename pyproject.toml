@@ -10,3 +10,10 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+  "gate: tier-2 live verification leg (docs/verification.md) — drives a real Anki on the dev Hyprland session; run explicitly: pytest -m gate",
+  "gate_full: tier-3 full gate (docs/verification.md) — checkpoint runs only (pre-release, Anki/Omarchy bumps, drift); run explicitly: pytest -m gate_full",
+]
+# Live legs stay out of the commit gate (which must stay seconds and GUI-free)
+# unless -m overrides — CLI args follow addopts and the later -m wins.
+addopts = ["-m", "not gate and not gate_full"]

@@ -21,11 +21,15 @@ residuals ledger the gate is responsible for closing. Vocabulary per
   pixel and its fill pixel, assert the pair meets its Floor (WCAG ratio). The
   render proves the Clamp landed — the pure-function tests alone don't.
 - **Characterize-then-lock** for points whose exact formula isn't known a
-  priori: the deck-row highlight composite (`--border-subtle` over
-  `--canvas-glass` — ticket 07 solved the channel, the blend math is
-  characterized once), stats chart series colors, and the Anki-default hexes the
-  below-floor legs assert against. Characterized values/formulas are locked into
-  versioned oracle data keyed by Anki version, then derived like everything else.
+  priori: stats chart series colors, and the Anki-default hexes the
+  below-floor legs assert against. Characterized values/formulas are locked
+  into versioned oracle data keyed by Anki version (`tests/gate/data/<anki
+  version>/sample_points.json`), then derived like everything else. First
+  characterization (26.08.1, ticket 22): the deck-row highlight is **not a
+  blend** — `tr.deck.current td` paints `--border-subtle` opaque, so the
+  oracle is the `selection` key verbatim; further characterized facts live in
+  the map's `characterized` section and the corrections to the surface table
+  below.
 
 ## Tiers
 
@@ -66,15 +70,36 @@ residuals ledger the gate is responsible for closing. Vocabulary per
 
 ### Tier 2 — fast live leg (changes touching theming delivery)
 
-`pytest -m gate`. Any change under the payload tree (mapping, clamp, applier,
-sync, runtime), `Service.qml`, or `tests/gate/` itself. Minutes:
+`pytest -m gate` (markers registered in `pyproject.toml`, excluded from the
+commit gate by `addopts` — a CLI `-m` overrides). Any change under the payload
+tree (mapping, clamp, applier, sync, runtime), `Service.qml`, or `tests/gate/`
+itself. Minutes (~30 s after the Qt caches warm; the scratch base's first run
+builds them). One session: a dedicated scratch base (seeded via aqt's own
+`ProfileManager`, the dev-linked payload under `ANKIYA_BUNDLED_PAYLOAD` pinned
+to the same tree so the bootloader's sync check lands on "current"), the
+dev-only `zz_gate_control` add-on as control channel (command files in, JSON
+results out), window capture via grim after focus (the ticket-09 method;
+`hyprctl dispatch` speaks Lua since Hyprland 0.55, and focus is verified by
+observed effect — hyprctl exits 0 for no-ops). Bootstrap once per machine:
+`python -m pip install --target tests/gate/vendor pillow` (gitignored; PIL on
+the system python, same cp314 ABI). Outputs — every probe report, switch
+record, and screenshot — land under `tests/gate/artifacts/<run>/` (gitignored;
+tier 3's gallery builds on this path). Fixture hygiene: the original theme is
+restored and the scratch base removed on teardown; `--no-restore` keeps both
+for debugging.
 
 - Palettes: **Catppuccin** (dark) + **Catppuccin Latte** (light).
 - Surfaces: deck browser, reviewer, editor (Add screen, sveltekit), menubar
   (Qt chrome) — the tier-3 subset.
 - **One same-polarity live switch on the running instance** (Catppuccin →
-  Gruvbox, the case Anki ignores natively): deck canvas + menubar recolor
-  pixel-exact, and the run's timings must sit inside the thresholds below.
+  Gruvbox, the case Anki ignores natively): nothing navigates between the
+  switch and the captures — deck canvas + menubar and the still-open Add
+  window (no page rebuild) must be pixel-exact, and the run's timings must
+  sit inside the thresholds below.
+- Thresholds assert on **every** switch (in-app apply from the applied
+  record; the 250 ms bound measured from the observed state-dir swap — the
+  `theme.name` poll in the harness — not from command invocation, whose
+  front half runs before any swap happens).
 
 ### Tier 3 — full gate (checkpoints)
 
@@ -140,11 +165,14 @@ Composition:
 
 ## The mandatory surface set
 
+Corrections from the 26.08.1 characterization (ticket 22) are folded in — the
+original oracle guesses that aqt's own CSS contradicts are marked.
+
 | # | Surface | Sample points (oracle) |
 | --- | --- | --- |
-| 1 | Deck browser (webview + the table) | canvas = `background`; current/hover row = characterized composite; deck-name link = `bright_blue`/`blue`; border = `muted` |
-| 2 | Reviewer | canvas = `background`; bottom bar = `lighter_background`; card face keeps notetype CSS (asserted unchanged, ticket 07 rule 4) |
-| 3 | Editor / Add screen (sveltekit) | page = `background`; input fill = elevated; focus ring = `accent` |
+| 1 | Deck browser (webview + the table) | canvas = `background`; current row = **`selection` verbatim** (characterized: `td` paints `--border-subtle` opaque — no blend); deck name = **`foreground`** (characterized: `a.deck { color: var(--fg) }`, not the link var; `--fg-link` has no consumer on this surface) |
+| 2 | Reviewer | page = `background` in night mode; **in light mode the page mirrors the card's own background** (characterized: Anki blends the card in — the assert locks the authored card hex, proving theming left the notetype layer alone); card face keeps notetype CSS (asserted unchanged, ticket 07 rule 4 — tier 2 seeds a notetype with an authored background); bottom bar buttons = `lighter_background` (`button { background: var(--button-bg) }`) |
+| 3 | Editor / Add screen (sveltekit) | page = `background`; input fill = elevated (`--canvas-elevated`); focus ring = `accent` (the focused field's outline) |
 | 4 | Stats | characterize-then-lock: page chrome follows the palette; chart series are data colors, expected verbatim |
 | 5 | Qt chrome: menubar + toolbar | `background` / `foreground` |
 | 6 | Open dropdown menu | menu bg/fg; highlighted row = `selection`@0.5 + on-tint |
@@ -157,14 +185,19 @@ Composition:
 | Bound | Threshold | Grounding (ticket 09 spike) |
 | --- | --- | --- |
 | In-app apply (palette read, post-debounce → all four delivery legs done) | ≤ 50 ms | 12.6–14.8 ms |
-| State-dir swap → recolor pixel-verified | ≤ 250 ms | completes before `omarchy theme set` returns |
-| Startup single-run sanity (apply + sync check) | ≤ 100 ms | 4.3 ms apply, ~10-file tree walk |
+| State-dir swap → applied record (all delivery legs done, open-page evals included) | ≤ 250 ms | completes before `omarchy theme set` returns |
+| Startup single-run sanity (the apply; the sync check rides unmeasured at import) | ≤ 100 ms | 4.3 ms apply, ~10-file tree walk |
 
 The in-app apply bound starts at the **post-debounce palette read** — ticket
 09's measured interval. The watcher's 150 ms debounce + digest guard run before
 that point and are excluded deliberately: they are coalescing machinery, not
 apply work, and the end-to-end bound (row 2) already covers them from the
-outside.
+outside. Row 2's clock starts at the **observed state-dir swap** (the harness
+polls `theme.name`, 5 ms granularity — not command invocation, whose front half
+runs before any swap happens) and ends at the applied record; the pixel-exact
+sampling that proves the recolor visually is asserted untimed after a fixed
+settle, since capture machinery (focus + grim) must not sit inside a render
+budget.
 
 Standing-metric **sessions** (defined methods, ≥5-run means) append to the perf
 log; tier-2/3 runs threshold-assert internally and append only their session
@@ -197,8 +230,12 @@ failures are regressions: investigated, never tuned away.
   rebuilt via the vision subagent on characterization runs.
 - Machine hygiene is fixture-shaped: setup/teardown restores the active theme,
   removes gate themes/profiles/add-on; `--no-restore` escape hatch for
-  debugging a failed run.
-- Markers: **when the gate lands**, register `gate`/`gate_full` in
-  `pyproject.toml` and set default exclusion via `addopts` (registering avoids
-  pytest's unregistered-marker warnings), so the commit gate stays fast and the
-  live legs are explicit invocations.
+  debugging a failed run. **Landed with ticket 22**: the harness restores the
+  theme and removes the scratch base on teardown, keeps every artifact under
+  `tests/gate/artifacts/<run>/`, and the gate add-on seeds its own base
+  (deck + due card + authored-card-background notetype) — the user's
+  collection is never the test substrate.
+- Markers: **landed with ticket 22** — `gate`/`gate_full` are registered in
+  `pyproject.toml` with default exclusion via `addopts` (a CLI `-m` overrides
+  it, per pytest's last-`-m`-wins rule), so the commit gate stays fast and
+  the live legs are explicit invocations.

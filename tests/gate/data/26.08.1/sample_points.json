@@ -1,0 +1,82 @@
+{
+  "anki_version": "26.08.1",
+  "characterized": {
+    "_comment": "Locked from characterization runs (docs/verification.md, characterize-then-lock). Facts: the deck current row paints --border-subtle opaque; a.deck names paint --fg; the seeded notetype's authored card background (reported by the gate add-on's seed command) is the card-face oracle — 26.08.1's stock Basic template paints no card background at all (bare {{Front}}), so the stock card-face constants from the ticket-06 live-install observation do not apply to a seeded base."
+  },
+  "probes": {
+    "deck": { "target": "main", "js": "probes/deck.js" },
+    "review": {
+      "target": "main",
+      "js": "probes/review.js",
+      "bottom_js": "probes/bottom.js"
+    },
+    "add": { "target": "add", "js": "probes/add.js" }
+  },
+  "points": {
+    "deck": {
+      "canvas": {
+        "view": "main",
+        "anchor": "dom.table",
+        "fx": 0.3,
+        "fy": 1.0,
+        "dy": 18
+      },
+      "row_fill": {
+        "view": "main",
+        "anchor": "dom.rowfill",
+        "fx": 0.5,
+        "fy": 0.5
+      },
+      "deck_name": { "view": "main", "anchor": "dom.link", "scan": true }
+    },
+    "menubar": {
+      "bg": { "view": "qt", "anchor": "qt.menubar", "fx": 0.97, "fy": 0.5 },
+      "menu_text": {
+        "view": "qt",
+        "anchor": "qt.action",
+        "action": "Help",
+        "scan": true
+      }
+    },
+    "review": {
+      "canvas": {
+        "view": "main",
+        "anchor": "dom.qa",
+        "fx": 0.3,
+        "fy": 1.0,
+        "dy": 30
+      },
+      "card_face": {
+        "view": "main",
+        "anchor": "dom.card",
+        "fx": 0.12,
+        "fy": 0.5
+      },
+      "button_fill": {
+        "view": "bottom",
+        "anchor": "dom.button",
+        "fx": 0.0,
+        "dx": 4,
+        "fy": 0.5
+      }
+    },
+    "add": {
+      "page_bg": { "view": "add", "fx": 0.985, "fy": 0.5 },
+      "input_fill": {
+        "view": "add",
+        "anchor": "dom.field0",
+        "fx": 0.5,
+        "fy": 0.5
+      },
+      "focus_ring": { "view": "add", "anchor": "dom.field0", "scan_ring": true }
+    }
+  },
+  "contrast": {
+    "_comment": "Computed from the render itself: sampled text pixel vs sampled fill pixel, asserted at the floor (docs/verification.md). The deck name is core foreground on canvas — the 4.5 floor the clamp guarantees for fg x background.",
+    "deck_name_vs_canvas": {
+      "text": ["deck", "deck_name"],
+      "fill": ["deck", "canvas"],
+      "floor": 4.5
+    }
+  }
+}
