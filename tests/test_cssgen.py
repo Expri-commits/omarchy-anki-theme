@@ -73,3 +73,14 @@ def test_css_covers_the_tables_var_names() -> None:
     # every var in the table — the generator and the mapping stay in lockstep.
     css = css_text(map_palette(theme_palette("catppuccin")))
     assert all(to_css_var(name) in css for name in VAR_NAMES)
+
+
+def test_no_selectors_touch_card_content() -> None:
+    """Card faces keep their notetype CSS (ticket 17): the only selectors the
+    runtime ever injects are `body` (vars) and `body .primary` (on-accent)."""
+    for name in ("catppuccin", "white"):
+        css = css_text(map_palette(theme_palette(name)))
+        script = engine_script(css)
+        for selector in (".card", ".card ", " .card", ".cloze", "#ans"):
+            assert selector not in css
+            assert selector not in script

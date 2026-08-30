@@ -12,6 +12,7 @@ from ankiya.palette import (
     VAR_NAMES,
     PaletteError,
     contrast_ratio,
+    fingerprint,
     load_palette,
     map_palette,
     pick_on_tint,
@@ -220,3 +221,39 @@ def test_contrast_ratio_known_values() -> None:
     assert contrast_ratio("#000000", "#ffffff") == pytest.approx(21.0)
     assert relative_luminance("#ffffff") == pytest.approx(1.0)
     assert relative_luminance("#000000") == pytest.approx(0.0)
+
+
+def test_fingerprint_stable_across_formatting_and_ignored_keys() -> None:
+    palette = {"background": "#111111", "foreground": "#eeeeee"}
+    assert fingerprint(palette, "dark") == fingerprint(dict(palette), "dark")
+    # Same palette content, different formatting/extra non-color keys.
+    a = load_palette('background = "#111111"\nforeground = "#eeeeee"\nmode = "dark"')
+    b = load_palette('foreground="#eeeeee"\nbackground="#111111"\nmode="dark"\n')
+    assert fingerprint(a, "dark") == fingerprint(b, "dark")
+
+
+def test_fingerprint_tracks_palette_and_mode_changes() -> None:
+    palette = {"background": "#111111", "foreground": "#eeeeee"}
+    assert fingerprint(palette, "dark") != fingerprint(palette, "light")
+    assert fingerprint(palette, "dark") != fingerprint(
+        {"background": "#222222", "foreground": "#eeeeee"}, "dark"
+    )
+    # A palette swap between stock themes never collides.
+    assert fingerprint(theme_palette("catppuccin"), "dark") != fingerprint(
+        theme_palette("gruvbox"), "dark"
+    )
+
+
+def test_load_raw_returns_mode_alongside_palette() -> None:
+    from ankiya.palette import load_raw
+
+    text = 'background = "#111111"\nmode = "dark"\nhyprland_border = "x"'
+    palette, mode = load_raw(text)
+    assert palette == {"background": "#111111"}
+    assert mode == "dark"
+    # mode is the runtime's polarity input only — absent or non-string degrades
+    # to None (light), never a mapping input.
+    assert load_raw('background = "#111111"')[1] is None
+    assert load_raw("mode = 3")[1] is None
+    with pytest.raises(PaletteError):
+        load_raw("mode = ")

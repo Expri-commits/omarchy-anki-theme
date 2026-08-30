@@ -17,6 +17,7 @@ Cross-cutting rules encoded here (ticket 07):
 
 from __future__ import annotations
 
+import hashlib
 import re
 import tomllib
 from dataclasses import dataclass
@@ -141,12 +142,13 @@ class Mapping:
     on_accent: str | None
 
 
-def load_palette(text: str) -> dict[str, str]:
-    """Parse colors.toml text into `{key: "#rrggbb"}`.
+def load_raw(text: str) -> tuple[dict[str, str], str | None]:
+    """Parse colors.toml text into `(palette, mode)` in one pass.
 
-    `mode` and any key whose value is not `#rrggbb` (non-color config such as
-    `hyprland_active_border`) are ignored; a consumed key dropped here
-    degrades exactly like an absent one. Malformed TOML raises PaletteError.
+    The palette keeps only `#rrggbb` values (see `load_palette`); `mode` rides
+    alongside for the runtime's night_mode choice — the mapping itself never
+    consults it (ticket 07's polarity-agnostic rule). Malformed TOML raises
+    PaletteError.
     """
     try:
         raw = tomllib.loads(text)
@@ -156,7 +158,29 @@ def load_palette(text: str) -> dict[str, str]:
     for key, value in raw.items():
         if isinstance(value, str) and (match := _HEX_RE.fullmatch(value.lower())):
             palette[key] = match.group(0)
-    return palette
+    mode = raw.get("mode")
+    return palette, mode if isinstance(mode, str) else None
+
+
+def load_palette(text: str) -> dict[str, str]:
+    """Parse colors.toml text into `{key: "#rrggbb"}`.
+
+    `mode` and any key whose value is not `#rrggbb` (non-color config such as
+    `hyprland_active_border`) are ignored; a consumed key dropped here
+    degrades exactly like an absent one. Malformed TOML raises PaletteError.
+    """
+    return load_raw(text)[0]
+
+
+def fingerprint(palette: dict[str, str], mode: str | None) -> str:
+    """Digest of exactly what theming consumes — the watcher's change test.
+
+    Color keys plus the ``mode`` that picks night_mode; formatting churn and
+    non-color config (e.g. hyprland border colors) leave it stable, so state
+    -dir events that didn't change the palette never re-theme Anki.
+    """
+    payload = repr((mode, sorted(palette.items())))
+    return hashlib.sha256(payload.encode()).hexdigest()[:16]
 
 
 def _channels(color: str) -> tuple[int, int, int]:
