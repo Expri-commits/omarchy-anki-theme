@@ -90,7 +90,10 @@ def install_user_theme(slug: str, palette: dict[str, str], mode: str) -> str:
     source = SYSTEM_THEMES / base
     dest = USER_THEMES / slug
     if dest.exists():
-        raise RuntimeError(f"user theme {dest} already exists — remove it first")
+        # A killed run can leave its gate themes registered; the prefix check
+        # above proves this directory is ours, so replace it rather than let
+        # the leftover poison every later run's setup.
+        shutil.rmtree(dest)
     dest.mkdir(parents=True)
     shutil.copy2(source / "colors.toml", dest / "colors.toml")
     if (source / "backgrounds").is_dir():

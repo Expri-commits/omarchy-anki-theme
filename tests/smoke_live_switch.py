@@ -80,7 +80,7 @@ def to_dir_name(display_name: str) -> str:
     return display_name.lower().replace(" ", "-")
 
 
-def seed_base(base: pathlib.Path) -> None:
+def seed_base(base: pathlib.Path, *, theme: int | None = None) -> None:
     """Pre-create prefs21.db so profile open never blocks.
 
     A fresh base would otherwise sit in the first-run language dialog (a
@@ -89,6 +89,11 @@ def seed_base(base: pathlib.Path) -> None:
     setupLangAndBackend), and creates the User 1 row that setupProfile
     auto-loads. Uses aqt's own ProfileManager so the pickled rows are
     exactly what Anki expects — run the smoke on system python for this.
+
+    ``theme`` optionally pins the theme preference (aqt.theme.Theme value)
+    into the global meta, decoupling the instance from the system portal —
+    the below-floor gate legs pin dark so their inert renders assert
+    against one deterministic polarity.
     """
     from aqt.profiles import ProfileManager
 
@@ -96,6 +101,8 @@ def seed_base(base: pathlib.Path) -> None:
     pm.setupMeta()
     pm.meta["firstRun"] = False
     pm.meta["defaultLang"] = "en"
+    if theme is not None:
+        pm.meta["theme"] = theme
     pm.create("User 1")
     # DB.execute(sql, *a) forwards positionals to sqlite3 — pass the pickle
     # bare, never pre-wrapped (a wrapped tuple binds as one tuple param).

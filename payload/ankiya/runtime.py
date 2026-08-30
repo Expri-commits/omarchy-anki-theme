@@ -97,6 +97,16 @@ class Runtime:
         self.config: dict = {}
         self.contrast_clamp = True
         self._digest: str | None = None
+        # True only after a completed, recorded apply in this process. The
+        # delivery legs (will_set_content append, engine-script upsert) key on
+        # it, not on wiring: with an unreadable palette the wiring still runs
+        # (the watcher is the recovery path), but pages must render Anki's own
+        # theming rather than whatever stale CSS sits in web/ from a previous
+        # session (ticket 13's no-op, total).
+        self._applied_once = False
+        # The dark flag of the last completed apply — None until one lands,
+        # so the startup apply is never labeled a flip.
+        self._last_dark: bool | None = None
         self._seq = 0
         self._started = False
         self._drift_checked = False
@@ -215,6 +225,11 @@ class Runtime:
 
         errors: list[str] = []
         dark = mode == "dark"
+        # Anki's own re-style cost: a polarity flip makes apply_style()
+        # re-polish every Qt widget (~60-90 ms observed) where a same-polarity
+        # switch is ~10-20 ms. Recorded so the gate's budget — and the perf
+        # log — treat the two as separate populations, not one budget's noise.
+        polarity_flip = self._last_dark is not None and self._last_dark != dark
         mapping, clamp_adjustments = self._map(palette)
         css = css_text(mapping)
         views = 0
@@ -260,11 +275,14 @@ class Runtime:
                 "clamped": len(clamp_adjustments),
                 "engine_profiles": len(self._engine_scripts),
                 "views": views,
+                "polarity_flip": polarity_flip,
                 "errors": errors,
                 "apply_ms": round((time.perf_counter() - t0) * 1000, 1),
                 "applied_at": time.time(),
             }
         )
+        self._applied_once = True
+        self._last_dark = dark
         return True
 
     def _map(self, palette: dict[str, str]) -> tuple[Mapping, tuple[Adjustment, ...]]:
@@ -305,17 +323,18 @@ class Runtime:
     def note_profile(self, profile: QWebEngineProfile) -> None:
         """A webview just got its user scripts — remember its profile.
 
-        Inert until start() has run: the below-floor no-op (ticket 13) must
-        never deliver a stale runtime-generated CSS. Tracking is otherwise
-        unconditional — the shared profile usually exists before the first
-        apply writes the CSS, so a profile seen early is recorded scriptless
-        and picked up by the next apply's refresh.
+        Inert until an apply has actually landed: a wiring-complete-but-
+        crashed start (unreadable palette, ticket 13) must never deliver the
+        stale runtime-generated CSS a previous session left in web/. Tracking
+        is otherwise unconditional — the shared profile usually exists before
+        the first apply writes the CSS, so a profile seen early is recorded
+        scriptless and picked up by the next apply's refresh.
         """
         if not self._started:
             return
         if any(p is profile for p, _ in self._engine_scripts):
             return
-        if CSS_FILE.exists():
+        if self._applied_once and CSS_FILE.exists():
             self._upsert_engine_script(profile, CSS_FILE.read_text())
         else:
             self._engine_scripts.append((profile, None))
@@ -364,7 +383,14 @@ class Runtime:
         restyled = 0
         for top in mw.app.topLevelWidgets():
             for view in top.findChildren(AnkiWebView):
-                if sip.isdeleted(view):
+                if sip.isdeleted(view) or not view.window().isVisible():
+                    # A page in a hidden window (a closed-but-alive dialog)
+                    # rebuilds its content when shown — will_set_content / the
+                    # engine script style it then. Evaling it here is wasted
+                    # renderer IPC that tripled the apply cost once dialogs
+                    # had been opened once (tier 3: 17 ms → 66 ms at 7 views).
+                    # Hidden tabs of a *visible* window (the prefs sveltekit
+                    # page) still eval — they never reload on tab switch.
                     continue
                 view.eval(js)
                 restyled += 1
@@ -374,7 +400,11 @@ class Runtime:
     # -- stdHtml pages -------------------------------------------------------
 
     def _on_will_set_content(self, web_content, context, *args) -> None:
-        web_content.css.append(f"/_addons/{ADDON_PACKAGE}/web/ankiya.css")
+        # Same delivered-gate as note_profile: before this process's first
+        # completed apply, stdHtml page builds render Anki's own theming —
+        # the stale on-disk CSS from a previous session must not reach them.
+        if self._applied_once:
+            web_content.css.append(f"/_addons/{ADDON_PACKAGE}/web/ankiya.css")
 
     # -- the watcher ---------------------------------------------------------
 

@@ -48,17 +48,22 @@ from pathological import MODES, P1, P2, P3, P4, P5  # noqa: E402
 from points import sample as _sample  # noqa: E402
 from sampling import Shot, contrast_ratio  # noqa: E402
 from test_gate import (  # noqa: E402
+    apply_budget_ms,
     assert_deck_and_menubar,
     assert_editor,
     assert_reviewer,
     assert_switch_record,
+    swap_budget_s,
 )
 
 pytestmark = pytest.mark.gate_full
 
-APPLY_BUDGET_MS = 50.0
-SWAP_TO_RECOLOR_S = 0.250
 STARTUP_BUDGET_MS = 100.0
+# Glyph pixels antialias 1–2 channels against their fill, so a sampled ratio
+# sits a hair under the pure-color math — the clamp's feasible landing points
+# can clear the floor by less than that (P1: 4.54). Contrast asserts compare
+# against tier-1's prediction with this slack, not against the policy floor.
+ANTIALIAS_SLACK = 0.25
 
 # The stock matrix's fixture dirs.
 from theme_fixtures import THEMES  # noqa: E402
@@ -194,13 +199,15 @@ def assert_pathological_record(
         f"{where}: clamped {record['clamped']}, tier-1 predicted {len(adjustments)}"
     )
     assert record["dark"] == oracle.dark, f"{where}: polarity mismatch"
-    assert record["apply_ms"] <= APPLY_BUDGET_MS, (
-        f"{where}: in-app apply took {record['apply_ms']}ms (budget {APPLY_BUDGET_MS}ms)"
+    budget = apply_budget_ms(record)
+    assert record["apply_ms"] <= budget, (
+        f"{where}: in-app apply took {record['apply_ms']}ms (budget {budget:g}ms)"
     )
     elapsed = record["applied_at"] - t_swap
-    assert elapsed <= SWAP_TO_RECOLOR_S, (
+    swap_budget = swap_budget_s(record)
+    assert elapsed <= swap_budget, (
         f"{where}: swap → recolor applied took {elapsed * 1000:.0f}ms "
-        f"(budget {SWAP_TO_RECOLOR_S * 1000:.0f}ms)"
+        f"(budget {swap_budget * 1000:.0f}ms)"
     )
     assert record["engine_profiles"] >= 1, f"{where}: sveltekit leg dead"
     assert record["views"] >= 1, f"{where}: no open webview was restyled"
@@ -370,9 +377,12 @@ def test_frame_diff_cross_check(gate3_session, add_window):
 
 
 def p_oracle(slug: str) -> tuple[ThemeOracle, dict[str, str], tuple]:
+    """The oracle expects what the runtime applies: the **clamped** mapping,
+    tier-1's own prediction. The authored palette verbatim is the faithful
+    mode's oracle, built where that leg needs it."""
     palette, mode = PATHOLOGICAL[slug]
-    _mapping, adjustments = map_with_clamp(palette, True)
-    return ThemeOracle.from_palette(palette, mode), palette, adjustments
+    mapping, adjustments = map_with_clamp(palette, True)
+    return ThemeOracle(palette=palette, mode=mode, mapping=mapping), palette, adjustments
 
 
 @pytest.mark.parametrize("slug", list(PATHOLOGICAL))
@@ -394,16 +404,22 @@ def test_pathological_render(slug: str, gate3_session, add_window, p_themes):
     canvas_xy, canvas = _sample(session, probe, "deck", "canvas", shot, oracle.canvas)
     name_xy, name = _sample(session, probe, "deck", "deck_name", shot, oracle.fg, scan=True)
     ratio = contrast_ratio(name, canvas)
-    unsat = [a for a in adjustments if a.unsatisfiable]
-    if unsat:
-        predicted_min = min(min(a.after) for a in unsat)
-        assert ratio >= predicted_min - 0.25, (
+    fg_adj = next((a for a in adjustments if a.key == "foreground"), None)
+    if fg_adj is not None and fg_adj.unsatisfiable:
+        predicted_min = min(fg_adj.after)
+        assert ratio >= predicted_min - ANTIALIAS_SLACK, (
             f"{slug}: rendered name contrast {ratio:.2f} below the predicted "
-            f"max-min {predicted_min:.2f} − 0.25"
+            f"max-min {predicted_min:.2f} − {ANTIALIAS_SLACK}"
         )
         assert ratio < 4.5, (
             f"{slug}: rendered contrast {ratio:.2f} claims AA the clamp called "
             "unsatisfiable — investigate before trusting it"
+        )
+    elif fg_adj is not None:
+        assert ratio >= fg_adj.after[0] - ANTIALIAS_SLACK, (
+            f"{slug}: rendered name contrast {ratio:.2f} below the clamp's "
+            f"landing point {fg_adj.after[0]:.2f} − {ANTIALIAS_SLACK} "
+            f"(text rgb{name} at {name_xy} vs fill rgb{canvas} at {canvas_xy})"
         )
     else:
         assert ratio >= 4.5, (
@@ -448,11 +464,17 @@ def test_p1_faithful_mode(gate3_session, add_window, p_themes):
     on screen, its failure to read honestly visible in the render."""
     session = gate3_session
     oracle, palette, adjustments = p_oracle("ankiya-gate-p1")
+    # The p2-link leg ran since the parametrized renders and left the session
+    # on p2 — switch back through the production path so the config re-apply
+    # below re-applies *this* palette (the record's theme field is the live
+    # theme.name, not the config flip's subject).
+    record, _t_swap, _t_set_done = session.switch("ankiya-gate-p1")
+    assert_pathological_record(record, _t_swap, oracle, adjustments, "p1-prefaithful")
 
-    # The parametrized leg already left us on P1; the config flip re-applies
-    # the current palette with reason "config". The restore rides a finally:
-    # a failure mid-test must never leak contrast_clamp=False into the next
-    # run (aqt stores the config inside the dev-linked add-on folder).
+    # The config flip re-applies the current (P1) palette with reason
+    # "config". The restore rides a finally: a failure mid-test must never
+    # leak contrast_clamp=False into the next run (aqt stores the config
+    # inside the dev-linked add-on folder).
     try:
         reply = session.cmd("set_clamp", {"enabled": False})
         assert reply["ok"] and reply["changed"], f"clamp flip failed: {reply}"
@@ -467,8 +489,11 @@ def test_p1_faithful_mode(gate3_session, add_window, p_themes):
         session.cmd("show_deck")
         probe = session.probe("deck")
         shot = Shot(session.capture("main", "p1-faithful"))
-        canvas_xy, canvas = _sample(session, probe, "deck", "canvas", shot, oracle.canvas)
-        _name_xy, name = _sample(session, probe, "deck", "deck_name", shot, oracle.fg, scan=True)
+        # Faithful mode renders the palette verbatim — the authored (here:
+        # invisible) foreground is the expectation.
+        faithful = ThemeOracle.from_palette(palette, MODES["p1"])
+        canvas_xy, canvas = _sample(session, probe, "deck", "canvas", shot, faithful.canvas)
+        _name_xy, name = _sample(session, probe, "deck", "deck_name", shot, faithful.fg, scan=True)
         ratio = contrast_ratio(name, canvas)
         assert ratio < 4.5, (
             f"faithful P1 render claims legibility ({ratio:.2f}) — the verbatim "

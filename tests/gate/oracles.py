@@ -33,7 +33,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from ankiya.palette import load_raw, map_palette
+from ankiya.palette import Mapping, load_raw, map_palette
 
 REPO = Path(__file__).resolve().parent.parent.parent
 FIXTURES = REPO / "tests" / "fixtures" / "themes"
@@ -83,6 +83,7 @@ class ThemeOracle:
         *,
         palette: dict[str, str] | None = None,
         mode: str | None = None,
+        mapping: Mapping | None = None,
     ) -> None:
         if fixture_dir is not None:
             text = (FIXTURES / fixture_dir / "colors.toml").read_text()
@@ -91,7 +92,10 @@ class ThemeOracle:
             if palette is None or mode is None:
                 raise ValueError("either a fixture dir or palette+mode is required")
             self.palette, self.mode = palette, mode
-        self.mapping = map_palette(self.palette)
+        # A supplied mapping overrides the plain one — the clamp legs pass
+        # map_with_clamp's result so the oracle expects what the runtime
+        # actually applies, not the authored palette verbatim.
+        self.mapping = mapping if mapping is not None else map_palette(self.palette)
         self.dark = self.mode == "dark"
         self.vars = self.mapping.vars
 

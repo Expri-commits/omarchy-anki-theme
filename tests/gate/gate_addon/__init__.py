@@ -494,24 +494,35 @@ def _open_menu(cmd_file: pathlib.Path, spec: dict) -> None:
     bar = mw.form.menubar
     geo = bar.actionGeometry(menu.menuAction())
     menu.popup(bar.mapToGlobal(geo.bottomLeft()))
+    _menu = menu
     if active is not None:
         # setActiveAction alone does not render the highlight on a Wayland
         # popup (no real mouse ever moves over it) — drive QMenu's own
         # mouse-move handling with a synthetic event at the action's center.
-        menu.setActiveAction(active)
-        act_geo = menu.actionGeometry(active)
-        local = QPointF(act_geo.center())
-        global_ = QPointF(menu.mapToGlobal(act_geo.center()))
-        event = QMouseEvent(
-            QEvent.Type.MouseMove,
-            local,
-            global_,
-            Qt.MouseButton.NoButton,
-            Qt.MouseButton.NoButton,
-            Qt.KeyboardModifier.NoModifier,
-        )
-        QApplication.sendEvent(menu, event)
-    _menu = menu
+        # The popup's late show can reset the active action after it stuck,
+        # so a guard keeps re-driving whenever it is lost, right up to the
+        # report moment (bounded well inside SETTLE_MS).
+        def _ensure_hover(tries: int) -> None:
+            if _menu is not menu:
+                return  # closed/replaced — stop
+            if menu.activeAction() is not active:
+                menu.setActiveAction(active)
+                act_geo = menu.actionGeometry(active)
+                local = QPointF(act_geo.center())
+                global_ = QPointF(menu.mapToGlobal(act_geo.center()))
+                event = QMouseEvent(
+                    QEvent.Type.MouseMove,
+                    local,
+                    global_,
+                    Qt.MouseButton.NoButton,
+                    Qt.MouseButton.NoButton,
+                    Qt.KeyboardModifier.NoModifier,
+                )
+                QApplication.sendEvent(menu, event)
+            if tries < 8:
+                QTimer.singleShot(70, lambda: _ensure_hover(tries + 1))
+
+        _ensure_hover(0)
 
     def report() -> None:
         _finish(cmd_file, {"ok": True, "menu": _menu_payload()})

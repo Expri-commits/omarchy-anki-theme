@@ -61,10 +61,21 @@ SWAP_TIMEOUT_S = 15.0
 def leg_home(gate3_down):
     """One scratch HOME shared by every down leg — only caches persist
     across legs (fontconfig, Qt), which keeps a dozen launches sane; every
-    leg still gets its own base and its own service/state dirs. Removed with
-    the session."""
+    leg still gets its own base and its own service/state dirs. Removed
+    with the session.
+
+    The home carries a healthy Omarchy palette (the runtime reads its
+    palette and writes its applied log under $HOME); the below-floor legs,
+    whose premise is exactly a missing/broken palette, move it aside and
+    restore faithfully."""
     home = gate3_down.run_dir / "legs" / "home"
-    home.mkdir(parents=True)
+    current = home / ".local/state/omarchy/current"
+    (current / "theme").mkdir(parents=True)
+    shutil.copy2(
+        GATE_DIR.parent / "fixtures" / "themes" / "catppuccin" / "colors.toml",
+        current / "theme" / "colors.toml",
+    )
+    (current / "theme.name").write_text("catppuccin\n")
     yield home
 
 
@@ -329,15 +340,17 @@ def test_below_floor_service_gates_inert(gate3_down, tmp_path):
         assert "4.0.1" in decision["message"], f"[{behavior}] inert message lacks the floor"
 
 
-def _inert_addon_instance(scratch: pathlib.Path, leg_home: pathlib.Path, palette: str):
-    """A scratch Anki whose palette file is absent (``palette="absent"``) or
-    unreadable — the add-on must apply nothing either way. Returns the
-    launch env and the ctl dir."""
-    from gate_harness import FIXTURE_THEMES
-
+def _inert_addon_instance(scratch: pathlib.Path, leg_home: pathlib.Path):
+    """A scratch Anki whose palette file is absent or unreadable — the add-on
+    must apply nothing either way. The theme preference pins dark (the
+    polarity the below-floor sample points characterize), and the caller
+    sabotages/restores the palette around the launch. Returns the launch env
+    and the ctl dir."""
     base = scratch / "base"
     base.mkdir(parents=True)
-    seed_base(base)
+    from aqt.theme import Theme
+
+    seed_base(base, theme=Theme.DARK)
     addons = base / "addons21"
     addons.mkdir()
     (addons / "ankiya").symlink_to(PAYLOAD)
@@ -348,14 +361,6 @@ def _inert_addon_instance(scratch: pathlib.Path, leg_home: pathlib.Path, palette
     )
     ctl = scratch / "ctl"
     ctl.mkdir()
-    current = leg_home / ".local/state/omarchy/current"
-    (current / "theme").mkdir(parents=True, exist_ok=True)
-    if palette == "unreadable":
-        target = current / "theme" / "colors.toml"
-        target.write_text((FIXTURE_THEMES / "catppuccin" / "colors.toml").read_text())
-        target.chmod(0o000)
-    elif palette != "absent":
-        raise ValueError(palette)
     return {
         "HOME": str(leg_home),
         "ANKIYA_BUNDLED_PAYLOAD": str(PAYLOAD),
@@ -373,7 +378,14 @@ def test_below_floor_addon_applies_nothing(gate3_down, gate3_session, leg_home, 
     from gate_harness import DATA_DIR
 
     scratch = leg_dir(gate3_down, f"below-floor-{palette}")
-    env, ctl = _inert_addon_instance(scratch, leg_home, palette)
+    env, ctl = _inert_addon_instance(scratch, leg_home)
+    palette_file = leg_home / ".local/state/omarchy/current/theme/colors.toml"
+    aside = scratch / "palette-aside.toml"
+    if palette == "absent":
+        shutil.move(str(palette_file), aside)
+    else:
+        palette_file.chmod(0o000)
+
     anki_log = scratch / "anki.log"
     t_launch = time.time()
     proc = launch(scratch / "base", anki_log, env)
@@ -431,6 +443,12 @@ def test_below_floor_addon_applies_nothing(gate3_down, gate3_session, leg_home, 
         )
     finally:
         stop(proc)
+        # The shared leg home's palette goes back exactly as it was — later
+        # legs (standalone, drift, startup cost) launch against it.
+        if palette == "absent":
+            shutil.move(str(aside), str(palette_file))
+        else:
+            palette_file.chmod(0o644)
 
 
 # -- consent / reinstall / standalone smoke (tickets 11/12) ----------------------------
@@ -542,7 +560,7 @@ def test_drift_retract_surfaces_once(gate3_down, leg_home):
     """Retract-class inventory drift: one log line + one transient tooltip
     on the first start; the state-dir signature dedup keeps the second start
     silent. The tooltip copy is the bundled one (a bundle dir exists)."""
-    from ankiya.drift import MARKER, RESTORE_BUNDLED, UNREADABLE_SIGNATURE
+    from ankiya.drift import MARKER, RESTORE_BUNDLED
 
     scratch = leg_dir(gate3_down, "drift-retract")
     base = scratch / "base"
@@ -566,7 +584,7 @@ def test_drift_retract_surfaces_once(gate3_down, leg_home):
     try:
         wait_applied(leg_home, t_launch, STARTUP_TIMEOUT_S, "the drifted start")
         text = log_text(anki_log)
-        assert "drift: aqt color vars drifted from the snapshot" in text, text[-2000:]
+        assert "aqt color vars drifted from the snapshot" in text, text[-2000:]
         assert "retracted 1 (CANVAS_CODE)" in text, text[-2000:]
     finally:
         stop(proc)
@@ -588,7 +606,6 @@ def test_drift_retract_surfaces_once(gate3_down, leg_home):
         stop(proc)
     lines = [json.loads(line) for line in drift_log.read_text().splitlines()]
     assert len(lines) == 1, "the second start tooltiped again — the dedup marker failed"
-    del UNREADABLE_SIGNATURE
 
 
 def test_drift_add_is_log_only(gate3_down, leg_home):
@@ -615,7 +632,7 @@ def test_drift_add_is_log_only(gate3_down, leg_home):
     try:
         wait_applied(leg_home, t_launch, STARTUP_TIMEOUT_S, "the add-drift start")
         text = log_text(anki_log)
-        assert "drift: aqt color vars drifted from the snapshot" in text, text[-2000:]
+        assert "aqt color vars drifted from the snapshot" in text, text[-2000:]
         assert "added 1 (ANKIYA_GATE_EXTRA)" in text, text[-2000:]
         assert not drift_log.exists(), "add-class drift must never tooltip"
         assert not (leg_home / ".local/state/omarchy/anki-theme/drift_seen.json").exists(), (

@@ -140,7 +140,13 @@ Composition:
   `omarchy-version`, **and with the command failing to run entirely**, stays
   inert — one journal line, consent toast never shown, nothing mounted; add-on
   with the palette file **absent or unreadable** applies nothing — one log
-  line, surfaces assert against characterized Anki defaults.
+  line, surfaces assert against characterized Anki defaults. Characterized
+  with ticket 23: the no-op must be **total** — hooks are wired before the
+  apply crashes, so the web delivery legs would otherwise serve the previous
+  session's generated CSS; every web/engine-script delivery is gated on this
+  process's first completed apply (`_applied_once` in the runtime). The legs
+  pin the base dark (`pm.meta["theme"]`) so the characterized defaults they
+  assert against aren't polarity-relative.
 - **Consent / reinstall / standalone smoke** (tickets 11/12): fresh consent
   flow (toast → click → install → minimal `meta.json` → no re-ask next service
   start); reinstall toast after Anki-side delete, once per service start,
@@ -173,20 +179,25 @@ original oracle guesses that aqt's own CSS contradicts are marked.
 | 1 | Deck browser (webview + the table) | canvas = `background`; current row = **`selection` verbatim** (characterized: `td` paints `--border-subtle` opaque — no blend); deck name = **`foreground`** (characterized: `a.deck { color: var(--fg) }`, not the link var; `--fg-link` has no consumer on this surface) |
 | 2 | Reviewer | page = `background` in night mode; **in light mode the page mirrors the card's own background** (characterized: Anki blends the card in — the assert locks the authored card hex, proving theming left the notetype layer alone); card face keeps notetype CSS (asserted unchanged, ticket 07 rule 4 — tier 2 seeds a notetype with an authored background); bottom bar buttons = `lighter_background` (`button { background: var(--button-bg) }`) |
 | 3 | Editor / Add screen (sveltekit) | page = `background`; input fill = elevated (`--canvas-elevated`); focus ring = `accent` (the focused field's outline) |
-| 4 | Stats | characterize-then-lock: page chrome follows the palette; chart series are data colors, expected verbatim |
+| 4 | Stats | characterized (26.08.1, ticket 23): page bg sampled DOM-anchored 24 px below the intro canvas — the right edge sits on flot's axis-label glyph column (invisible in dark mode, dark glyphs in light); first series = `STATE_NEW` drawn by flot at fill 0.7 over the page canvas, oracle blends at 0.7 |
 | 5 | Qt chrome: menubar + toolbar | `background` / `foreground` |
-| 6 | Open dropdown menu | menu bg/fg; highlighted row = `selection`@0.5 + on-tint |
-| 7 | Modal dialog (Preferences) | elevated = `dark_background`; button fill; border = `muted` |
+| 6 | Open dropdown menu | menu bg/fg; highlighted row = `selection`@0.5 + on-tint — sampled from the widget's own `grab()` (characterized, ticket 23: Wayland clients can't know a popup's compositor position and the compositor dims the window behind it; the highlight is driven synthetically — `setActiveAction` + a synthetic MouseMove at the action center, re-driven until the report moment) |
+| 7 | Modal dialog (Preferences) | characterized (ticket 23): the reachable dialog is the **native Qt one** — 26.08.1's sveltekit prefs page hides on a non-current labs tab, its webview never visible; dialog margin = `background` (QPalette Window), tab pane = `dark_background` (`aqt.stylesheets.tabwidget`) |
 | 8 | Toast + tooltip | `dark_background` / `foreground` (overlay semantics, ticket 07) — **joins when the mechanism lands** (ledger row 1) |
 | 9 | Below-floor no-op renders | characterized Anki defaults |
 
 ## Thresholds (asserted on every live run)
 
-| Bound | Threshold | Grounding (ticket 09 spike) |
+| Bound | Threshold | Grounding |
 | --- | --- | --- |
-| In-app apply (palette read, post-debounce → all four delivery legs done) | ≤ 50 ms | 12.6–14.8 ms |
-| State-dir swap → applied record (all delivery legs done, open-page evals included) | ≤ 250 ms | completes before `omarchy theme set` returns |
-| Startup single-run sanity (the apply; the sync check rides unmeasured at import) | ≤ 100 ms | 4.3 ms apply, ~10-file tree walk |
+| In-app apply (palette read, post-debounce → all four delivery legs done) | ≤ 200 ms same-polarity; ≤ 250 ms across a dark↔light flip | 12.6–14.8 ms short-session (ticket 09 spike); two additive costs scale it: aqt's `_apply_style()` re-polishes every Qt widget on a polarity flip (~60–115 ms), and the restyle loop pays per open webview — the full-matrix session accumulates up to 7 restyled views, a 12 ms first switch reaching a **150–260 ms plateau, variable across sessions** (perf log 2026-08-30). **These bounds are mid-recalibration**: they cover one observed session, not the other — raise (≈ 400/450 ms) or scale per view once the per-view cost investigation (deferred 2026-08-30) lands |
+| State-dir swap → applied record (all delivery legs done, open-page evals included) | ≤ 450 ms same-polarity; ≤ 500 ms across a flip | completes before `omarchy theme set` returns in short sessions (ticket 09); the flip + session-scale view count ride the same window (150 ms debounce + apply + jitter) |
+| Startup single-run sanity (the apply; the sync check rides unmeasured at import) | ≤ 100 ms | 4.3 ms apply, ~10-file tree walk (startup restyles only the 3 launch views) |
+
+The flip split keys off a `polarity_flip` field the applied record carries
+(ticket 23): same-polarity switches keep the tight bounds, dark↔light flips get
+their own — one slow population must not loosen the threshold the standing
+metric asserts.
 
 The in-app apply bound starts at the **post-debounce palette read** — ticket
 09's measured interval. The watcher's 150 ms debounce + digest guard run before
@@ -213,7 +224,7 @@ failures are regressions: investigated, never tuned away.
 | 2 | Bootstrap vars beyond `--bs-body-bg/-color`, `--bs-border-color`, `--bs-link-color` stay stock | ticket 07 | Tier-3 gallery sweep decides: visible sveltekit seam → mapping grows rows (tests follow); no seam → closed as sufficient |
 | 3 | Focus-ring visibility with accent-as-ornament verbatim | ticket 08 | P3 render + gallery observation; invisible ring reopens ticket 08's policy |
 | 4 | Link floor checked against `background` only — elevated-surface link contrast unobserved | ticket 08 mechanics 5 | Tier-3 gallery observation on deck-browser-filtered/elevated links |
-| 5 | Stats chart colors uncharacterized | ticket 14 | Characterize at first tier-3 run; then locked |
+| 5 | Stats chart colors uncharacterized | ticket 14 | **Closed (ticket 23)**: first tier-3 run characterized them — first series = `STATE_NEW` (aqt's theme) drawn by flot at fill 0.7 over the page canvas; oracle blends at 0.7, verified δ2. Locked in `tests/gate/oracles.py` (`stats_added_bar`) |
 
 ## Infrastructure notes
 
