@@ -163,11 +163,14 @@ Composition:
   ticket 12's perf duty). Plus swap cost, measured once (ticket 12's other
   duty). Appends to the log.
 - **Gallery review** — every surface × palette screenshot archived under
-  `tests/gate/artifacts/` (**gitignore that path when the gate lands**); vision
-  subagent sweeps for seams sampling can't see (the deep `--bs-*` decision
-  below, unthemed patches, focus rings, on-tint legibility); the gallery stays
-  available for the human eyeball pre-flip and feeds ticket 10's re-shot
-  screenshots.
+  `tests/gate/artifacts/` (gitignored); vision subagent sweeps for seams
+  sampling can't see (the deep `--bs-*` decision below, unthemed patches,
+  focus rings, on-tint legibility); the gallery stays available for the human
+  eyeball pre-flip and feeds ticket 10's re-shot screenshots. Built by
+  `scripts/build_gallery.py <run-dir>` (per-theme montages + index.html).
+  **Swept 2026-08-30** over the first green full run (`20260830-223107`,
+  27 editor shots + 52 deck/menu/special shots): findings recorded in the
+  residuals ledger rows 2/3/4/7.
 
 ## The mandatory surface set
 
@@ -179,25 +182,35 @@ original oracle guesses that aqt's own CSS contradicts are marked.
 | 1 | Deck browser (webview + the table) | canvas = `background`; current row = **`selection` verbatim** (characterized: `td` paints `--border-subtle` opaque — no blend); deck name = **`foreground`** (characterized: `a.deck { color: var(--fg) }`, not the link var; `--fg-link` has no consumer on this surface) |
 | 2 | Reviewer | page = `background` in night mode; **in light mode the page mirrors the card's own background** (characterized: Anki blends the card in — the assert locks the authored card hex, proving theming left the notetype layer alone); card face keeps notetype CSS (asserted unchanged, ticket 07 rule 4 — tier 2 seeds a notetype with an authored background); bottom bar buttons = `lighter_background` (`button { background: var(--button-bg) }`) |
 | 3 | Editor / Add screen (sveltekit) | page = `background`; input fill = elevated (`--canvas-elevated`); focus ring = `accent` (the focused field's outline) |
-| 4 | Stats | characterized (26.08.1, ticket 23): page bg sampled DOM-anchored 24 px below the intro canvas — the right edge sits on flot's axis-label glyph column (invisible in dark mode, dark glyphs in light); first series = `STATE_NEW` drawn by flot at fill 0.7 over the page canvas, oracle blends at 0.7 |
-| 5 | Qt chrome: menubar + toolbar | `background` / `foreground` |
+| 4 | Stats | characterized (26.08.1, ticket 23): page bg sampled DOM-anchored 24 px below the intro canvas — the right edge sits on flot's axis-label glyph column (invisible in dark mode, dark glyphs in light); first series = `STATE_NEW` drawn by flot at fill 0.7 over the page canvas, oracle blends at 0.7. **Light-mode amendment (2026-08-30):** QtWebEngine leaves the light-polarity page background tiles unrendered (stale GPU-tile noise — pixel-identical across different palettes; glyphs, series and bottom chrome paint themed) — the page-bg assert is dark-only, light asserts the probe's DOM-computed `body_bg` (ledger row 6) |
+| 5 | Qt chrome: menubar + toolbar | `background` / `foreground`; nav toolbar (ToolbarWebView's stdHtml page — added 2026-08-30 after the user clip caught the coverage gap): fancy bar = `dark_background` (`--canvas-elevated`) in the deck state; flat review = a translucent `--canvas-glass` strip over the page beneath — **dark-only assert** vs `canvas` (glass over canvas, verified Δ≤3 across the dark stocks; `toolbar_review` point), light composites over the card-mirrored page (notetype content — characterized, formula `background@0.4 + card_face@0.6` verified exact on white) |
 | 6 | Open dropdown menu | menu bg/fg; highlighted row = `selection`@0.5 + on-tint — sampled from the widget's own `grab()` (characterized, ticket 23: Wayland clients can't know a popup's compositor position and the compositor dims the window behind it; the highlight is driven synthetically — `setActiveAction` + a synthetic MouseMove at the action center, re-driven until the report moment) |
 | 7 | Modal dialog (Preferences) | characterized (ticket 23): the reachable dialog is the **native Qt one** — 26.08.1's sveltekit prefs page hides on a non-current labs tab, its webview never visible; dialog margin = `background` (QPalette Window), tab pane = `dark_background` (`aqt.stylesheets.tabwidget`) |
 | 8 | Toast + tooltip | `dark_background` / `foreground` (overlay semantics, ticket 07) — **joins when the mechanism lands** (ledger row 1) |
 | 9 | Below-floor no-op renders | characterized Anki defaults |
 
-## Thresholds (asserted on every live run)
+## Thresholds (recorded on every live run — not asserted)
 
-| Bound | Threshold | Grounding |
+**De-gated 2026-08-30 by user directive**: after three gate sessions whose
+failure sets were dominated by timing (apply cost grows with open views and is
+session-variable, 150–260 ms at the matrix plateau), timing asserts became
+**record-only** — numbers land in each run's artifacts
+(`perf-switch-records.jsonl`, the perf-session and frame-diff JSON) and in the
+perf log's session rows; they cannot fail a run. The bounds below stay as the
+recorded reference for what healthy looked like; re-asserting them (with
+recalibrated values or per-view scaling) is the first act of the perf-polish
+ticket once correctness is green.
+
+| Bound | Healthy range | Grounding |
 | --- | --- | --- |
-| In-app apply (palette read, post-debounce → all four delivery legs done) | ≤ 200 ms same-polarity; ≤ 250 ms across a dark↔light flip | 12.6–14.8 ms short-session (ticket 09 spike); two additive costs scale it: aqt's `_apply_style()` re-polishes every Qt widget on a polarity flip (~60–115 ms), and the restyle loop pays per open webview — the full-matrix session accumulates up to 7 restyled views, a 12 ms first switch reaching a **150–260 ms plateau, variable across sessions** (perf log 2026-08-30). **These bounds are mid-recalibration**: they cover one observed session, not the other — raise (≈ 400/450 ms) or scale per view once the per-view cost investigation (deferred 2026-08-30) lands |
-| State-dir swap → applied record (all delivery legs done, open-page evals included) | ≤ 450 ms same-polarity; ≤ 500 ms across a flip | completes before `omarchy theme set` returns in short sessions (ticket 09); the flip + session-scale view count ride the same window (150 ms debounce + apply + jitter) |
-| Startup single-run sanity (the apply; the sync check rides unmeasured at import) | ≤ 100 ms | 4.3 ms apply, ~10-file tree walk (startup restyles only the 3 launch views) |
+| In-app apply (palette read, post-debounce → all four delivery legs done) | 12.6–14.8 ms short-session; 150–260 ms at the full-matrix plateau | ticket 09 spike + perf log 2026-08-30; two additive costs: aqt's `_apply_style()` re-polishes every Qt widget on a polarity flip (~60–115 ms), and the restyle loop pays per open webview (up to 7 restyled views in the matrix session) — per-view cost investigation deferred to the perf-polish ticket |
+| State-dir swap → applied record (all delivery legs done, open-page evals included) | completes before `omarchy theme set` returns in short sessions; the flip + session-scale view count ride the same window (150 ms debounce + apply + jitter) | ticket 09; the frame-diff cross-check asserts the recolor **shows on screen exactly once per switch** (correctness) and *records* the video-vs-records interval delta — applied_at trails the visible flip by the remaining restyle legs (0.8 s at the matrix session's view count, run 3) |
+| Startup single-run sanity (the apply; the sync check rides unmeasured at import) | 4.3 ms apply, ~10-file tree walk (startup restyles only the 3 launch views) | ticket 22 |
 
-The flip split keys off a `polarity_flip` field the applied record carries
-(ticket 23): same-polarity switches keep the tight bounds, dark↔light flips get
-their own — one slow population must not loosen the threshold the standing
-metric asserts.
+The flip split keyed off a `polarity_flip` field the applied record carries
+(ticket 23): when the polish ticket re-arms assertions, same-polarity switches
+get tight bounds and dark↔light flips their own — one slow population must not
+loosen the threshold the standing metric asserts.
 
 The in-app apply bound starts at the **post-debounce palette read** — ticket
 09's measured interval. The watcher's 150 ms debounce + digest guard run before
@@ -211,20 +224,23 @@ settle, since capture machinery (focus + grim) must not sit inside a render
 budget.
 
 Standing-metric **sessions** (defined methods, ≥5-run means) append to the perf
-log; tier-2/3 runs threshold-assert internally and append only their session
-entries — a deliberate interpretation of the append-every-measurement rule so
-the log records method-consistent numbers, not per-run noise. Threshold
-failures are regressions: investigated, never tuned away.
+log; tier-2/3 runs **record** their switch timings into the run artifacts and
+append only their session entries — a deliberate interpretation of the
+append-every-measurement rule so the log records method-consistent numbers,
+not per-run noise. Timing cannot fail a run (the 2026-08-30 de-gating above);
+the perf-polish ticket restores assertions once recalibrated.
 
 ## Residuals ledger
 
 | # | Residual | Provenance | State |
 | --- | --- | --- | --- |
 | 1 | Toast/tooltip `QPalette` roles unreached by the var mapping; overlay semantics assigned, mechanism TBD at build | tickets 06 → 07 | Gate grows surface 8 when the mechanism lands; until then stock toast/tooltip is expected behavior, not a failure |
-| 2 | Bootstrap vars beyond `--bs-body-bg/-color`, `--bs-border-color`, `--bs-link-color` stay stock | ticket 07 | Tier-3 gallery sweep decides: visible sveltekit seam → mapping grows rows (tests follow); no seam → closed as sufficient |
-| 3 | Focus-ring visibility with accent-as-ornament verbatim | ticket 08 | P3 render + gallery observation; invisible ring reopens ticket 08's policy |
-| 4 | Link floor checked against `background` only — elevated-surface link contrast unobserved | ticket 08 mechanics 5 | Tier-3 gallery observation on deck-browser-filtered/elevated links |
+| 2 | Bootstrap vars beyond `--bs-body-bg/-color`, `--bs-border-color`, `--bs-link-color` stay stock | ticket 07 | **Closed (ticket 23 sweep)**: 27-shot editor sweep found no stock-chrome seam in any theme — every sampled surface (page bg, combos, field fills, buttons) matches its palette; the only unpainted element anywhere is aqt's own raster font-color toolbar icon swatch (`#0000ff`, an image asset CSS cannot reach). The four-var mapping is sufficient |
+| 3 | Focus-ring visibility with accent-as-ornament verbatim | ticket 08 | **Closed (ticket 23 sweep)**: ring visible in all 22 stock themes (the gate's pixel assert already proves it paints `accent`; the sweep confirms human visibility). solitude's authored accent is near-achromatic (#788085-style) so its ring reads gray but stays visible — the verbatim policy holding, not failing. Hostile gate-p2 (accent ≈ canvas) renders the ring invisible — outside the stock bar, within the policy envelope |
+| 4 | Link floor checked against `background` only — elevated-surface link contrast unobserved | ticket 08 mechanics 5 | **Closed (ticket 23 sweep)**: deck-name link + nav/pill labels legible on their elevated rows in all 22 stock themes, including the near-monochrome ones (white, matte-black, vantablack, solitude, retro-82). Hostile gate palettes can still floor out on elevated rows (p1/p2/p3 unreadable "Gate" link) — floors are defined against `background`; stock bar met, recorded as the known envelope |
 | 5 | Stats chart colors uncharacterized | ticket 14 | **Closed (ticket 23)**: first tier-3 run characterized them — first series = `STATE_NEW` (aqt's theme) drawn by flot at fill 0.7 over the page canvas; oracle blends at 0.7, verified δ2. Locked in `tests/gate/oracles.py` (`stats_added_bar`) |
+| 6 | Light-mode stats page background renders as stale GPU-tile noise | ticket 23, characterized 2026-08-30 (run-2 artifacts + vision sweep) | QtWebEngine leaves the light-polarity page's background tiles unrendered — pixel-identical noise across different palettes (97% byte-equal latte vs flexoki), while glyphs, series and the bottom chrome paint themed and the DOM-computed `body_bg` carries the themed canvas. Dark paints flat and exact. Gate: page-bg pixel assert is dark-only, light asserts `body_bg` from the probe; revisit on any Anki/Qt bump (tier-3 trigger) — if the artifact is gone, restore the pixel assert for both polarities |
+| 7 | Monochrome palettes collide with Anki's disabled/faint text roles | ticket 23 sweep | **white**: the Add window's disabled History button renders a blank pill — `FG_DISABLED` ← `dark_foreground` (`#c0c0c0`) on a `#c1c1c1`-measured fill (pixel-verified: interior darkest luminance == fill; nord/catppuccin show 165+ spread on the same regions). Cosmetic-class companions: faint zero-count digits in last-horizon/solitude/vantablack, white's Learn count in neutral gray. Palette-authored colors under the locked mapping — candidate remedy for the polish ticket: derive `FG_DISABLED` on-tint against the `BUTTON_DISABLED` composite. Not a flip blocker |
 
 ## Infrastructure notes
 

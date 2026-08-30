@@ -4,19 +4,20 @@ and the perf session's live legs (ticket 23, docs/verification.md §Tier 3).
 One matrix instance (scratch base, dev-linked payload, the gate control
 add-on), then in order:
 
-  startup sanity            the ≤ 100 ms startup-apply budget
+  startup sanity            the startup apply completed cleanly (timing
+                            recorded, never gated — user directive
+                            2026-08-30)
   the Add window            opened once before the matrix; it stays open, so
                             every later switch must restyle it live (no page
                             rebuild) — the same-polarity proof per theme
   the stock matrix          all 22 stock palettes × the mandatory surfaces
-                            (deck browser + menubar, reviewer, editor, stats,
-                            Qt menu popup, Preferences dialog), each switch
-                            threshold-asserted
+                            (deck browser + menubar + toolbar, reviewer,
+                            editor, stats, Qt menu popup, Preferences dialog)
   the perf session          ≥ 5-switch timing means + the screen-recording
                             frame-diff cross-check the spike left pending
   the pathological renders  P1–P5 as real user themes through the production
                             ``omarchy theme set`` path; clamp log lines must
-                            match tier-1's pure prediction; P1 again in
+                            match tier-1's prediction; P1 again in
                             faithful mode (config flip through the real
                             writeConfig + configUpdatedAction path)
 
@@ -43,22 +44,21 @@ sys.path.insert(0, str(GATE_DIR))
 
 from ankiya.palette import VAR_RULES  # noqa: E402
 from ankiya.theme_clamp import clamp_palette, map_with_clamp  # noqa: E402
-from oracles import ThemeOracle  # noqa: E402
+from oracles import ThemeOracle, rgb  # noqa: E402
 from pathological import MODES, P1, P2, P3, P4, P5  # noqa: E402
 from points import sample as _sample  # noqa: E402
-from sampling import Shot, contrast_ratio  # noqa: E402
+from sampling import TOLERANCE, Shot, channel_delta, contrast_ratio  # noqa: E402
 from test_gate import (  # noqa: E402
-    apply_budget_ms,
     assert_deck_and_menubar,
     assert_editor,
     assert_reviewer,
     assert_switch_record,
-    swap_budget_s,
+    note_perf,
+    perf_row,
 )
 
 pytestmark = pytest.mark.gate_full
 
-STARTUP_BUDGET_MS = 100.0
 # Glyph pixels antialias 1–2 channels against their fill, so a sampled ratio
 # sits a hair under the pure-color math — the clamp's feasible landing points
 # can clear the floor by less than that (P1: 4.54). Contrast asserts compare
@@ -112,13 +112,26 @@ def assert_stats(session, oracle: ThemeOracle, label: str) -> None:
     try:
         probe = session.probe("stats")
         shot = Shot(session.capture("stats", f"stats-{label}"))
-        _sample(session, probe, "stats", "page_bg", shot, oracle.canvas)
         # 26.08.1 characterization: the legacy flot page's series colors flow
         # through theme_manager._update_stat_colors from the mapped STATE_*
         # vars — the Added graph's bar is colLearn = STATE_NEW drawn at flot's
         # fill=0.7 over the canvas, so the assert stays palette-derived
         # (residuals row 5).
         _sample(session, probe, "stats", "series", shot, oracle.stats_added_bar, scan=True)
+        if oracle.dark:
+            _sample(session, probe, "stats", "page_bg", shot, oracle.canvas)
+        else:
+            # Light polarity: QtWebEngine leaves the page's background tiles
+            # unrendered — stale GPU-tile noise, pixel-identical across
+            # palettes (residuals row 6, characterized 2026-08-30). The theming
+            # itself is proven DOM-side: the computed body background carries
+            # the palette canvas.
+            got = rgb(probe["dom"]["stats"]["result"]["body_bg"])
+            delta = channel_delta(got, oracle.canvas)
+            assert delta <= TOLERANCE, (
+                f"stats/page_bg[{label}, light, DOM]: computed body_bg rgb{got} "
+                f"is {delta} > {TOLERANCE}/channel from expected rgb{oracle.canvas}"
+            )
     finally:
         session.cmd("close_stats")
 
@@ -185,7 +198,7 @@ def assert_full_surfaces(session, oracle: ThemeOracle, label: str) -> None:
 
 
 def assert_pathological_record(
-    record: dict, t_swap: float, oracle: ThemeOracle, adjustments: tuple, leg: str
+    record: dict, t_swap: float, oracle: ThemeOracle, adjustments: tuple, leg: str, session=None
 ) -> None:
     """Like tier 2's record assert, but the clamp count must equal tier-1's
     pure prediction instead of zero."""
@@ -199,16 +212,7 @@ def assert_pathological_record(
         f"{where}: clamped {record['clamped']}, tier-1 predicted {len(adjustments)}"
     )
     assert record["dark"] == oracle.dark, f"{where}: polarity mismatch"
-    budget = apply_budget_ms(record)
-    assert record["apply_ms"] <= budget, (
-        f"{where}: in-app apply took {record['apply_ms']}ms (budget {budget:g}ms)"
-    )
-    elapsed = record["applied_at"] - t_swap
-    swap_budget = swap_budget_s(record)
-    assert elapsed <= swap_budget, (
-        f"{where}: swap → recolor applied took {elapsed * 1000:.0f}ms "
-        f"(budget {swap_budget * 1000:.0f}ms)"
-    )
+    note_perf(session, perf_row(record, t_swap, leg))
     assert record["engine_profiles"] >= 1, f"{where}: sveltekit leg dead"
     assert record["views"] >= 1, f"{where}: no open webview was restyled"
 
@@ -233,9 +237,7 @@ def test_startup_sanity(gate3_session):
     assert record is not None
     assert record["errors"] == [], f"startup apply errors: {record['errors']}"
     assert record["vars"] + record["skipped"] == len(VAR_RULES)
-    assert record["apply_ms"] <= STARTUP_BUDGET_MS, (
-        f"startup apply took {record['apply_ms']}ms (budget {STARTUP_BUDGET_MS}ms)"
-    )
+    note_perf(gate3_session, {"leg": "startup", "apply_ms": record["apply_ms"]})
 
 
 @pytest.mark.parametrize("theme", THEMES)
@@ -244,7 +246,7 @@ def test_matrix(theme: str, gate3_session, add_window):
     surface set — 22 of these."""
     oracle = ThemeOracle(theme)
     record, t_swap, _t_set_done = gate3_session.switch(theme)
-    assert_switch_record(record, t_swap, oracle, f"matrix {theme}")
+    assert_switch_record(record, t_swap, oracle, f"matrix {theme}", gate3_session)
     assert_full_surfaces(gate3_session, oracle, theme)
 
 
@@ -254,8 +256,8 @@ def test_matrix(theme: str, gate3_session, add_window):
 def test_switch_timing_session(gate3_session, add_window):
     """The standing switch-to-reapply metric, session-shaped: five
     same-polarity (dark→dark) switches through the production path, each
-    threshold-asserted, means written to the run's artifacts for the perf
-    log session row."""
+    recorded (timing is record-only since the 2026-08-30 de-gating), means
+    written to the run's artifacts for the perf log session row."""
     session = gate3_session
     session.cmd("show_deck")
     # Establish the alternation's start (the matrix leaves the last stock
@@ -266,7 +268,7 @@ def test_switch_timing_session(gate3_session, add_window):
         target = "gruvbox" if index % 2 == 0 else "catppuccin"
         oracle = ThemeOracle(target)
         record, t_swap, t_set_done = session.switch(target)
-        assert_switch_record(record, t_swap, oracle, f"timing {target}")
+        assert_switch_record(record, t_swap, oracle, f"timing {target}", session)
         samples.append(
             {
                 "theme": target,
@@ -336,21 +338,32 @@ def test_frame_diff_cross_check(gate3_session, add_window):
     f_gruv, f_catpp = flips_to_gruv[0], flips_to_catpp[0]
     interval_video = (f_catpp - f_gruv) / fps
     interval_records = record_b["applied_at"] - record_a["applied_at"]
-    assert abs(interval_video - interval_records) <= 0.3, (
-        f"flip interval on video {interval_video:.3f}s vs applied records "
-        f"{interval_records:.3f}s — the records disagree with the screen"
+    # Interval agreement is recorded, not asserted (de-gated 2026-08-30, run
+    # 3): applied_at is stamped after ALL restyle legs finish, while the
+    # screen flips when the main webview repaints mid-loop — with the matrix
+    # session's open views that tail reached 0.8 s. A real disagreement to
+    # investigate belongs to the perf-polish ticket; the flips-exist and
+    # exactly-once asserts above carry the correctness claim.
+    print(
+        f"perf: flip interval on video {interval_video:.3f}s vs applied records "
+        f"{interval_records:.3f}s (delta {interval_video - interval_records:+.3f}s — "
+        "applied_at trails the visible flip by the remaining restyle legs)"
     )
 
     first_ts = first_frame_timestamp(rec_path)
     absolute = None
     if first_ts is not None:
         flip_a_wall = first_ts + f_gruv / fps
-        absolute = {"flip_a_wall": flip_a_wall, "vs_set_done_s": flip_a_wall - t_set_done_a}
-        # The spike's headline, pixel-proven: the recolor is on screen by the
-        # time `omarchy theme set` returns (+ a frame's slack).
-        assert flip_a_wall <= t_set_done_a + 0.25, (
-            f"recolor visible {flip_a_wall - t_set_done_a:+.3f}s after "
-            "omarchy theme set returned (frame-diff cross-check)"
+        absolute = {
+            "flip_a_wall": flip_a_wall,
+            "vs_set_done_s": flip_a_wall - t_set_done_a,
+        }
+        # The spike's headline, pixel-proven and recorded (not asserted —
+        # perf is record-only since the 2026-08-30 de-gating): how long
+        # after `omarchy theme set` returned the recolor was on screen.
+        print(
+            f"perf: recolor visible {flip_a_wall - t_set_done_a:+.3f}s around "
+            "`omarchy theme set` returning (frame-diff absolute anchor)"
         )
     (session.run_dir / "perf-frame-diff.json").write_text(
         json.dumps(
@@ -359,6 +372,7 @@ def test_frame_diff_cross_check(gate3_session, add_window):
                 "flip_frames": [f_gruv, f_catpp],
                 "interval_video_s": interval_video,
                 "interval_records_s": interval_records,
+                "interval_delta_s": interval_video - interval_records,
                 "first_frame_ts": first_ts,
                 "absolute": absolute,
                 "applied_ms": [record_a["apply_ms"], record_b["apply_ms"]],
@@ -396,7 +410,7 @@ def test_pathological_render(slug: str, gate3_session, add_window, p_themes):
     oracle, _palette, adjustments = p_oracle(slug)
     session.cmd("show_deck")
     record, t_swap, _t_set_done = session.switch(slug)
-    assert_pathological_record(record, t_swap, oracle, adjustments, slug)
+    assert_pathological_record(record, t_swap, oracle, adjustments, slug, session)
     assert_clamp_lines(session, adjustments)
 
     probe = session.probe("deck")
@@ -469,7 +483,7 @@ def test_p1_faithful_mode(gate3_session, add_window, p_themes):
     # below re-applies *this* palette (the record's theme field is the live
     # theme.name, not the config flip's subject).
     record, _t_swap, _t_set_done = session.switch("ankiya-gate-p1")
-    assert_pathological_record(record, _t_swap, oracle, adjustments, "p1-prefaithful")
+    assert_pathological_record(record, _t_swap, oracle, adjustments, "p1-prefaithful", session)
 
     # The config flip re-applies the current (P1) palette with reason
     # "config". The restore rides a finally: a failure mid-test must never

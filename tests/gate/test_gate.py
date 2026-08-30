@@ -14,14 +14,17 @@ started on Catppuccin):
                              Catppuccin, no page rebuild) must be pixel-exact
   Catppuccin Latte (light)   full surface asserts again on the light polarity
 
-Every switch asserts the thresholds internally (in-app apply ≤ 50 ms,
-swap → applied ≤ 250 ms; startup sanity ≤ 100 ms asserts once); contrast
-asserts are computed from sampled render pixels (deck-name text × canvas),
-and every pixel assert names its surface + sample point on failure.
+Timing is recorded, never gated (user directive 2026-08-30): every switch's
+apply cost and swap→applied latency land in the run's artifacts for the
+perf-log session; thresholds return with the perf-polish ticket once
+correctness is green. Contrast asserts are computed from sampled render
+pixels (deck-name text × canvas), and every pixel assert names its surface +
+sample point on failure.
 """
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -37,52 +40,48 @@ from sampling import Shot, contrast_ratio  # noqa: E402
 
 pytestmark = pytest.mark.gate
 
-APPLY_BUDGET_MS = 200.0
-FLIP_APPLY_BUDGET_MS = 250.0
-SWAP_TO_RECOLOR_S = 0.450
-FLIP_SWAP_TO_RECOLOR_S = 0.500
-STARTUP_BUDGET_MS = 100.0
+
+def note_perf(session, row: dict) -> None:
+    """Timing is recorded, never gated (user directive 2026-08-30): switch
+    costs land in the run's artifacts for the perf-log session row; thresholds
+    return with the perf-polish ticket once correctness is green."""
+    if session is None:
+        return
+    with (session.run_dir / "perf-switch-records.jsonl").open("a") as f:
+        f.write(json.dumps(row) + "\n")
 
 
-def apply_budget_ms(record: dict) -> float:
-    """The in-app apply budget this record must meet. Two cost populations:
-    a polarity flip makes aqt's apply_style() re-polish every Qt widget
-    (~60–115 ms extra), and the restyle loop pays ~25 ms per open webview —
-    the full-matrix session accumulates up to 7 restyled views, taking a
-    12 ms first switch to a ~160 ms plateau (perf log 2026-08-30, pending
-    investigation). These bounds are session-scale: they cover the plateau,
-    not the standing metric's ~7 ms short-session cost."""
-    return FLIP_APPLY_BUDGET_MS if record.get("polarity_flip") else APPLY_BUDGET_MS
+# -- record asserts --------------------------------------------------------------
 
 
-def swap_budget_s(record: dict) -> float:
-    """The swap→applied budget: same split — the flip's re-polish and the
-    per-view restyle cost both ride the same elapsed window (150 ms debounce
-    + apply + jitter), so the flip population keeps extra headroom."""
-    return FLIP_SWAP_TO_RECOLOR_S if record.get("polarity_flip") else SWAP_TO_RECOLOR_S
+def perf_row(record: dict, t_swap: float, leg: str) -> dict:
+    """The one switch-timing row every record assert appends."""
+    return {
+        "leg": leg,
+        "apply_ms": record["apply_ms"],
+        "swap_to_applied_ms": round((record["applied_at"] - t_swap) * 1000, 1),
+        "polarity_flip": bool(record.get("polarity_flip")),
+    }
 
 
-# -- threshold + record asserts ----------------------------------------------
-
-
-def assert_switch_record(record: dict, t_swap: float, oracle: ThemeOracle, leg: str):
+def assert_switch_record(
+    record: dict, t_swap: float, oracle: ThemeOracle, leg: str, session=None
+) -> dict:
     where = f"switch leg {leg!r}"
     assert record["errors"] == [], f"{where}: apply errors {record['errors']}"
-    assert record["vars"] == len(VAR_RULES) and record["skipped"] == 0, (
-        f"{where}: mapped {record['vars']}+{record['skipped']} vars, expected {len(VAR_RULES)}+0"
+    # Expected coverage is fixture-derived, never hardcoded: palettes lacking
+    # keys (last-horizon, solitude have no brown/orange) legitimately map
+    # fewer vars — the degrade-to-defaults policy riding `skipped`.
+    assert record["vars"] == len(oracle.mapping.vars) and record["skipped"] == len(
+        oracle.mapping.skipped
+    ), (
+        f"{where}: mapped {record['vars']}+{record['skipped']} vars, expected "
+        f"{len(oracle.mapping.vars)}+{len(oracle.mapping.skipped)} "
+        "(the fixture through the locked mapping)"
     )
     assert record["clamped"] == 0, f"{where}: clamp adjusted a stock palette"
     assert record["dark"] == oracle.dark, f"{where}: polarity mismatch"
-    budget = apply_budget_ms(record)
-    assert record["apply_ms"] <= budget, (
-        f"{where}: in-app apply took {record['apply_ms']}ms (budget {budget:g}ms)"
-    )
-    elapsed = record["applied_at"] - t_swap
-    swap_budget = swap_budget_s(record)
-    assert elapsed <= swap_budget, (
-        f"{where}: swap → recolor applied took {elapsed * 1000:.0f}ms "
-        f"(budget {swap_budget * 1000:.0f}ms)"
-    )
+    note_perf(session, perf_row(record, t_swap, leg))
     assert record["engine_profiles"] >= 1, f"{where}: sveltekit leg dead (no profile scripted)"
     assert record["views"] >= 1, f"{where}: no open webview was restyled"
     return record
@@ -101,6 +100,10 @@ def assert_deck_and_menubar(session, oracle: ThemeOracle, label: str) -> None:
     # with the layout, so a fractional x could sit on a menu label's glyphs.
     _sample(session, probe, "menubar", "bg", shot, oracle.canvas, scan=True)
     _sample(session, probe, "menubar", "menu_text", shot, oracle.fg, scan=True)
+    # The nav toolbar (ToolbarWebView — a stdHtml page, the surface the
+    # 2026-08-30 clip caught the gate never sampling): the fancy bar paints
+    # canvas-elevated in the deck state this assert runs in.
+    _sample(session, probe, "menubar", "toolbar_bg", shot, oracle.canvas_elevated)
 
     # Contrast from the render itself (docs/verification.md): the sampled
     # text pixel vs the sampled fill pixel, at the floor the sample map
@@ -126,6 +129,12 @@ def assert_reviewer(session, oracle: ThemeOracle, label: str) -> None:
     _sample(session, probe, "review", "canvas", shot, page)
     _sample(session, probe, "review", "card_face", shot, card_face)
     _sample(session, probe, "review", "button_fill", shot, oracle.button_fill)
+    # The flat review toolbar is a translucent glass strip over the page
+    # beneath: dark renders exactly canvas (glass over canvas, verified
+    # delta<=3 across the dark stocks); light composites over the
+    # card-mirrored page — notetype content, characterized not oracle-able.
+    if oracle.dark:
+        _sample(session, probe, "menubar", "toolbar_review", shot, oracle.canvas)
 
 
 def assert_editor(session, oracle: ThemeOracle, label: str) -> None:
@@ -140,25 +149,22 @@ def assert_editor(session, oracle: ThemeOracle, label: str) -> None:
 
 
 def test_startup_sanity(gate_session):
-    """Startup single-run sanity: the apply itself inside the 100 ms budget.
-    The bootloader's sync check (a 0.30 ms current-check per
-    docs/performance.md) rides at import before it and is not separately
-    observable from outside the process."""
+    """Startup sanity: the apply completed cleanly. The bootloader's sync
+    check (a 0.30 ms current-check per docs/performance.md) rides at import
+    before it and is not separately observable from outside the process."""
     record = gate_session.startup_record
     assert record is not None
     assert record["errors"] == [], f"startup apply errors: {record['errors']}"
     assert record["vars"] + record["skipped"] == len(VAR_RULES), (
         f"startup accounted {record['vars']}+{record['skipped']} vars, expected {len(VAR_RULES)}"
     )
-    assert record["apply_ms"] <= STARTUP_BUDGET_MS, (
-        f"startup apply took {record['apply_ms']}ms (budget {STARTUP_BUDGET_MS}ms)"
-    )
+    note_perf(gate_session, {"leg": "startup", "apply_ms": record["apply_ms"]})
 
 
 def test_catppuccin_deck_and_menubar(gate_session):
     oracle = ThemeOracle("catppuccin")
     record, t_swap, _t_set_done = gate_session.switch("catppuccin")
-    assert_switch_record(record, t_swap, oracle, "catppuccin full")
+    assert_switch_record(record, t_swap, oracle, "catppuccin full", gate_session)
     gate_session.cmd("show_deck")
     assert_deck_and_menubar(gate_session, oracle, "catppuccin")
 
@@ -183,12 +189,10 @@ def test_same_polarity_switch_gruvbox(gate_session):
     oracle = ThemeOracle("gruvbox")
     gate_session.cmd("show_deck")  # rebuilt under Catppuccin
     record, t_swap, _t_set_done = gate_session.switch("gruvbox")
-    assert_switch_record(record, t_swap, oracle, "gruvbox same-polarity")
-    # Deck canvas + menubar pixel-exact against the Gruvbox oracle, no rebuild.
-    probe = gate_session.probe("deck")
-    shot = Shot(gate_session.capture("main", "gruvbox-live"))
-    _sample(gate_session, probe, "deck", "canvas", shot, oracle.canvas)
-    _sample(gate_session, probe, "menubar", "bg", shot, oracle.canvas)
+    assert_switch_record(record, t_swap, oracle, "gruvbox same-polarity", gate_session)
+    # Deck + menubar + toolbar pixel-exact against the Gruvbox oracle, no
+    # rebuild between the switch and the captures.
+    assert_deck_and_menubar(gate_session, oracle, "gruvbox-live")
     # The Add window (open since the Catppuccin leg) recolored live too.
     add_probe = gate_session.probe("add")
     add_shot = Shot(gate_session.capture("add", "gruvbox-live"))
@@ -198,7 +202,7 @@ def test_same_polarity_switch_gruvbox(gate_session):
 def test_latte_all_surfaces(gate_session):
     oracle = ThemeOracle("catppuccin-latte")
     record, t_swap, _t_set_done = gate_session.switch("catppuccin-latte")
-    assert_switch_record(record, t_swap, oracle, "latte full")
+    assert_switch_record(record, t_swap, oracle, "latte full", gate_session)
     gate_session.cmd("show_deck")
     assert_deck_and_menubar(gate_session, oracle, "latte")
     gate_session.cmd("show_review")

@@ -585,7 +585,7 @@ def test_drift_retract_surfaces_once(gate3_down, leg_home):
         wait_applied(leg_home, t_launch, STARTUP_TIMEOUT_S, "the drifted start")
         text = log_text(anki_log)
         assert "aqt color vars drifted from the snapshot" in text, text[-2000:]
-        assert "retracted 1 (CANVAS_CODE)" in text, text[-2000:]
+        assert "retracted 1 (CANVAS_INSET)" in text, text[-2000:]
     finally:
         stop(proc)
 
@@ -593,7 +593,7 @@ def test_drift_retract_surfaces_once(gate3_down, leg_home):
     assert len(lines) == 1, f"expected exactly one tooltip, got {lines}"
     assert "renamed or removed" in lines[0]["text"] and RESTORE_BUNDLED in lines[0]["text"]
     marker = json.loads((leg_home / ".local/state/omarchy/anki-theme" / MARKER).read_text())
-    assert marker["signatures"] == ["CANVAS_CODE"], marker
+    assert marker["signatures"] == ["CANVAS_INSET"], marker
 
     anki_log = scratch / "second.log"
     t_launch = time.time()
@@ -610,6 +610,12 @@ def test_drift_retract_surfaces_once(gate3_down, leg_home):
 
 def test_drift_add_is_log_only(gate3_down, leg_home):
     """Additive churn nags nobody: the log line fires, no tooltip, no marker."""
+    from ankiya.drift import MARKER
+
+    # The retract leg ran first against this shared leg_home and legitimately
+    # recorded its dedup signature; this leg asserts *this start* recorded
+    # nothing, so clear the marker first.
+    (leg_home / ".local/state/omarchy/anki-theme" / MARKER).unlink(missing_ok=True)
     scratch = leg_dir(gate3_down, "drift-add")
     base = scratch / "base"
     base.mkdir()

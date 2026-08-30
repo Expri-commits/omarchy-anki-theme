@@ -29,11 +29,16 @@ if MODE:
     import aqt.utils
 
     if MODE == "retract":
-        # A real snapshot name; its absence is genuine retract-class drift
-        # (coverage shrank), and the runtime's tolerant skip handles the
-        # missing slot gracefully for the rest of the session.
-        if hasattr(ak_colors, "CANVAS_CODE"):
-            del ak_colors.CANVAS_CODE
+        # A real snapshot name aqt never dereferences at apply time: a mock
+        # that deleted, say, CANVAS_CODE would crash theme_manager's own
+        # _apply_palette (theme.py dereferences it), aborting the startup
+        # apply unrecorded — an unfaithful mock, since real retract-class
+        # drift means aqt's code stopped referencing the var. CANVAS_INSET
+        # is only consumed by generated QSS after the palette exists, and
+        # the runtime's tolerant skip handles the missing slot gracefully
+        # for the rest of the session.
+        if hasattr(ak_colors, "CANVAS_INSET"):
+            del ak_colors.CANVAS_INSET
     elif MODE == "add":
         # The gather shape: a public dict with both polarity slots.
         ak_colors.ANKIYA_GATE_EXTRA = {"light": "#000000", "dark": "#000000"}

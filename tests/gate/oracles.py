@@ -39,13 +39,17 @@ REPO = Path(__file__).resolve().parent.parent.parent
 FIXTURES = REPO / "tests" / "fixtures" / "themes"
 
 _HEX_RE = re.compile(r"#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})")
+_RGB_RE = re.compile(r"rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)")
 _RGBA_RE = re.compile(r"rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([0-9.]+)\s*\)")
 
 
 def rgb(color: str) -> tuple[int, int, int]:
-    """A mapped var value (`#rrggbb` or `rgba(r, g, b, a)`) → rgb triple."""
+    """A mapped var value (`#rrggbb`, `rgb(r, g, b)` or `rgba(r, g, b, a)`,
+    the last two as reported by DOM computed styles) → rgb triple."""
     if match := _HEX_RE.fullmatch(color.lower()):
         return tuple(int(g, 16) for g in match.groups())  # type: ignore[return-value]
+    if match := _RGB_RE.fullmatch(color.lower()):
+        return tuple(int(g) for g in match.groups())  # type: ignore[return-value]
     if match := _RGBA_RE.fullmatch(color.lower()):
         r, g, b, _a = match.groups()
         return int(r), int(g), int(b)
