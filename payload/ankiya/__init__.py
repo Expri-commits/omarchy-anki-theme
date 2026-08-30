@@ -9,8 +9,9 @@ Two contracts make that hop safe and must stay stable across payload
 versions: the sync protocol (stamp schema + swap steps) and
 ``runtime.start()``.
 
-GUI-free logic lives in ``palette``/``cssgen``/``theme_clamp``/``sync``
-(tier-1 pytest); ``runtime`` is the Anki-side applier + watcher (ticket 17).
+GUI-free logic lives in ``palette``/``cssgen``/``theme_clamp``/``sync``/
+``drift`` (tier-1 pytest); ``runtime`` is the Anki-side applier + watcher
+(ticket 17).
 
 Fail-open by contract: a sync crash is logged and skipped — the running code
 themes this session, and Anki's own ``loadAddons`` try/except is the outer

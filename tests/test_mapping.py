@@ -5,7 +5,6 @@ Fixtures are the 22 stock Omarchy palettes, vendored from
 """
 
 import re
-from pathlib import Path
 
 import pytest
 from ankiya.palette import (
@@ -61,16 +60,8 @@ def test_all_22_stock_themes_vendored() -> None:
     assert len(THEMES) == 22
 
 
-def test_table_covers_the_snapshotted_var_inventory() -> None:
-    """The mapping claims every aqt.colors name the installed Anki carries.
-
-    The snapshot is the ticket-15 tripwire artifact (vendored from the
-    installed Anki 26.08.1); ticket 21 wires its regeneration + runtime diff.
-    """
-    snapshot = (Path(__file__).parent / "data" / "aqt_color_vars.txt").read_text().splitlines()
-    names = {line.strip() for line in snapshot if line.strip() and not line.startswith("#")}
-    assert len(names) == 51
-    assert set(VAR_NAMES) == names
+# The tier-1 tripwire itself (mapping ⊇ vendored snapshot) lives in
+# test_drift.py with the snapshot it now ships beside (payload/ankiya/).
 
 
 @pytest.mark.parametrize("theme", THEMES)

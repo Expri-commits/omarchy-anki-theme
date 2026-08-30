@@ -55,6 +55,23 @@ for recoloring) but receives no updates and sends no notifications, except the
 in-Anki drift notice (ticket 15).
 _Avoid_: orphaned add-on, degraded mode
 
+### Upgrades
+
+**Snapshot**:
+The vendored name-set of the installed Anki's `aqt.colors` vars the mapping
+was built against (`ankiya/var_snapshot.txt`, shipped in the payload).
+Tier 1's tripwire asserts the mapping covers it; regenerated via
+`scripts/regen_var_snapshot.py` on every Anki upgrade.
+_Avoid_: baseline file, golden file
+
+**Drift**:
+The startup verdict on Anki's color-var inventory versus the Snapshot —
+name-set only, values never. Retract-class (the live inventory lost covered
+names, or is unreadable) logs and shows one transient in-Anki tooltip per
+signature (the sorted retract set — the state-dir marker dedups on it);
+add-class (new names) logs only. Never gates theming.
+_Avoid_: variance, mismatch (when meaning the verdict)
+
 ### The service half
 
 **Gate**:

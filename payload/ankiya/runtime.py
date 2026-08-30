@@ -34,6 +34,11 @@ A missing palette file at start means Omarchy is absent or below the 4.0.1+
 floor (ticket 13): one log line, no watcher, Anki keeps its own theming.
 Standalone mode (ticket 12: plugin removed, add-on left behind) works because
 the palette is read from disk, nowhere else.
+
+Before theming wires up, the drift check (tickets 15/21) diffs the live
+``aqt.colors`` name-set against the payload's vendored snapshot: retract-class
+drift gets one transient tooltip per signature (``drift.py`` owns the policy);
+it never gates the apply, whose unknown-name skips stay tolerant.
 """
 
 from __future__ import annotations
@@ -54,9 +59,12 @@ from aqt.qt import (
     sip,
 )
 from aqt.theme import theme_manager
+from aqt.utils import tooltip
 from aqt.webview import AnkiWebView
 
+from ankiya import bundled_payload_dir
 from ankiya.cssgen import css_text, engine_script
+from ankiya.drift import SNAPSHOT_FILE, run_check
 from ankiya.palette import Mapping, fingerprint, load_raw
 from ankiya.theme_clamp import Adjustment, map_with_clamp
 
@@ -91,6 +99,7 @@ class Runtime:
         self._digest: str | None = None
         self._seq = 0
         self._started = False
+        self._drift_checked = False
         self._hook_installed = False
         self._watcher: QFileSystemWatcher | None = None
         self._debounce: QTimer | None = None
@@ -108,6 +117,7 @@ class Runtime:
                 "4.0.1+ floor; Anki keeps its own theming"
             )
             return
+        self._check_drift()
         self._read_config()
         try:
             if not self._started:
@@ -143,6 +153,28 @@ class Runtime:
             self.apply("startup")
         except Exception:
             _log(f"startup apply crashed — Anki keeps its own theming:\n{traceback.format_exc()}")
+
+    def _check_drift(self) -> None:
+        """The startup drift check (tickets 15/21): diff the live aqt.colors
+        name-set against the payload's vendored snapshot — once per process,
+        here rather than at import so it runs after the bootloader's sync
+        check and therefore on fresh payload code. Never gates theming and
+        never breaks startup; the plugin's presence picks the tooltip's
+        restore copy (bundled vs standalone)."""
+        if self._drift_checked:
+            return
+        self._drift_checked = True
+        try:
+            run_check(
+                ak_colors,
+                SNAPSHOT_FILE,
+                PLUGIN_STATE_DIR,
+                bundled=bundled_payload_dir().exists(),
+                log=_log,
+                tooltip=tooltip,
+            )
+        except Exception:
+            _log(f"drift check crashed:\n{traceback.format_exc()}")
 
     def _read_config(self) -> None:
         self.config = mw.addonManager.getConfig(ADDON_PACKAGE) or {}

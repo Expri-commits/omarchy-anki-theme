@@ -55,10 +55,14 @@ residuals ledger the gate is responsible for closing. Vocabulary per
 - **Var-inventory tripwire** (the dev-side half of
   [ticket 15](../.scratch/anki-theme/issues/15-anki-upgrade-var-churn-policy.md)'s
   drift policy — the same snapshot and diff routine ship in the add-on payload
-  as its runtime startup check) — a vendored snapshot of the installed Anki's
-  `aqt.colors` names; the mapping asserts it covers every name in the snapshot.
-  An Anki upgrade regenerates the snapshot; renamed/retracted vars fail here
-  first.
+  as its runtime startup check: `ankiya/var_snapshot.txt` + `ankiya/drift.py`)
+  — a vendored snapshot of the installed Anki's `aqt.colors` names; tier 1
+  asserts the mapping covers every name in the snapshot **and** that the live
+  `aqt.colors` inventory still matches it. The Anki-upgrade regeneration move:
+  run `/usr/bin/python scripts/regen_var_snapshot.py`, repair `VAR_RULES`
+  (`ankiya/palette.py`) for any retracted/added names it reports, re-run tier
+  1, and ship via the normal payload propagation. Renamed/retracted vars fail
+  here first.
 
 ### Tier 2 — fast live leg (changes touching theming delivery)
 
