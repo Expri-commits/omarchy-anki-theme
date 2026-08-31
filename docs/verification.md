@@ -1,7 +1,7 @@
 # Verification gate
 
 How the full-surface claim is proven and kept true. Decisions and rationale live
-in [wayfinder ticket 14](../.scratch/anki-theme/issues/14-verification-approach.md);
+in the internal wayfinder ticket 14 (decision log not published);
 this file is the operational spec the implementation builds against, plus the
 residuals ledger the gate is responsible for closing. Vocabulary per
 [CONTEXT.md](../CONTEXT.md).
@@ -56,8 +56,8 @@ residuals ledger the gate is responsible for closing. Vocabulary per
   `__pycache__` never.
 - **CSS / script generation** — body-scoped vars string, the injected
   `.primary` on-accent rule, the four `--bs-*` extras, engine-script source.
-- **Var-inventory tripwire** (the dev-side half of
-  [ticket 15](../.scratch/anki-theme/issues/15-anki-upgrade-var-churn-policy.md)'s
+- **Var-inventory tripwire** (the dev-side half of internal
+  wayfinder ticket 15's
   drift policy — the same snapshot and diff routine ship in the add-on payload
   as its runtime startup check: `anki_theme/var_snapshot.txt` + `anki_theme/drift.py`)
   — a vendored snapshot of the installed Anki's `aqt.colors` names; tier 1

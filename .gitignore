@@ -8,3 +8,5 @@ tests/gate/artifacts/
 # vendored Pillow for the gate's PIL sampling (python-pillow, cp314 wheel);
 # bootstrap: python -m pip install --target tests/gate/vendor pillow
 tests/gate/vendor/
+# internal dev tracker (decision log) — kept local, never published
+.scratch/
