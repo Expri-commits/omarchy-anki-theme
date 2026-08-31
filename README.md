@@ -6,8 +6,7 @@ reviewer, editor, stats, dialogs, menus, tables. No restart.
 
 ![Anki following an Omarchy theme switch](preview.png)
 
-![Deck browser before and after a light→dark theme switch](docs/img/polarity-flip.png)
-![Even a dark→dark switch recolors live](docs/img/same-polarity.png)
+https://github.com/user-attachments/assets/029fc080-28ee-490b-8d8e-955f56667da2
 
 All 22 stock Omarchy themes work, and so do user-made ones: colors are read
 from Omarchy's own `colors.toml`, so there is no per-theme setup. Dark→dark
