@@ -1,7 +1,7 @@
 """Tier-2 gate: the fast live leg (ticket 22, docs/verification.md §Tier 2).
 
 One session, one scratch Anki (dedicated base, dev-linked payload, the gate
-control add-on), three asserted live switches through the production
+control add-on), four asserted live switches through the production
 ``omarchy theme set`` path (plus a decoupling flip at launch when the session
 started on Catppuccin):
 
@@ -13,6 +13,10 @@ started on Catppuccin):
                              menubar and the Add window (kept open since
                              Catppuccin, no page rebuild) must be pixel-exact
   Catppuccin Latte (light)   full surface asserts again on the light polarity
+  Catppuccin (dark)          the polarity flip mid-review (ticket 26): the
+                             flat toolbar's inline background copy must be
+                             dropped and re-taken in place — no navigation
+                             between the switch and the captures
 
 Timing is recorded, never gated (user directive 2026-08-30): every switch's
 apply cost and swap→applied latency land in the run's artifacts for the
@@ -26,6 +30,7 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -129,10 +134,14 @@ def assert_reviewer(session, oracle: ThemeOracle, label: str) -> None:
     _sample(session, probe, "review", "canvas", shot, page)
     _sample(session, probe, "review", "card_face", shot, card_face)
     _sample(session, probe, "review", "button_fill", shot, oracle.button_fill)
-    # The flat review toolbar is a translucent glass strip over the page
-    # beneath: dark renders exactly canvas (glass over canvas, verified
-    # delta<=3 across the dark stocks); light composites over the
-    # card-mirrored page — notetype content, characterized not oracle-able.
+    # The flat review toolbar is a translucent glass strip whose body wears
+    # an inline copy of the reviewer page's computed background (aqt
+    # TopWebView.update_background_image, refreshed only on the card page's
+    # updateToolbar ping — ankitects/anki#5240): dark renders exactly canvas
+    # (glass over canvas, verified delta<=3 across the dark stocks); light
+    # composites over the card-mirrored page — notetype content,
+    # characterized not oracle-able. The mid-review flip leg below pins the
+    # re-copy that nothing in aqt performs.
     if oracle.dark:
         _sample(session, probe, "menubar", "toolbar_review", shot, oracle.canvas)
 
@@ -208,3 +217,23 @@ def test_latte_all_surfaces(gate_session):
     gate_session.cmd("show_review")
     assert_reviewer(gate_session, oracle, "latte")
     assert_editor(gate_session, oracle, "latte")
+
+
+def test_polarity_flip_mid_review(gate_session):
+    """The field-found hole (ticket 26, ankitects/anki#5240): the flat
+    toolbar's body wears an inline copy of the reviewer page's computed
+    background, refreshed by aqt only on the card page's updateToolbar ping
+    — a light→dark flip while sitting in the reviewer left the strip in the
+    old polarity's composite. Flip under Latte to Catppuccin and assert in
+    place: with no navigation between the switch and the captures, the
+    toolbar strip can only be the dark composite if the runtime dropped and
+    re-took the copy."""
+    oracle = ThemeOracle("catppuccin")
+    gate_session.cmd("show_review")  # flatten + light inline composite
+    record, t_swap, _t_set_done = gate_session.switch("catppuccin")
+    assert_switch_record(record, t_swap, oracle, "catppuccin mid-review flip", gate_session)
+    # The re-copy is deliberate: it waits out Anki's 180 ms transition
+    # window (runtime REVIEW_TOOLBAR_COPY_MS) so the strip is sampled in
+    # its settled composite, not the mid-flight blend.
+    time.sleep(0.4)
+    assert_reviewer(gate_session, oracle, "catppuccin-mid-review")

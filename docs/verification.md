@@ -96,6 +96,16 @@ for debugging.
   switch and the captures — deck canvas + menubar and the still-open Add
   window (no page rebuild) must be pixel-exact, and the run's timings must
   sit inside the thresholds below.
+- **One polarity flip mid-review** (Latte → Catppuccin with the reviewer
+  showing, ticket 26): the flat top toolbar's body wears an *inline copy* of
+  the reviewer page's computed background (`aqt` `TopWebView
+  .update_background_image`, refreshed only on the card page's
+  `updateToolbar` ping — upstream gap ankitects/anki#5240), so a flip while
+  seated in the review state left the strip in the old polarity's composite.
+  The runtime drops the stale copy on `theme_did_change` and re-takes it
+  after the 180 ms transition window (`REVIEW_TOOLBAR_COPY_MS`); the leg
+  asserts the reviewer page and the `toolbar_review` strip in place, no
+  navigation between switch and captures.
 - Thresholds assert on **every** switch (in-app apply from the applied
   record; the 250 ms bound measured from the observed state-dir swap — the
   `theme.name` poll in the harness — not from command invocation, whose

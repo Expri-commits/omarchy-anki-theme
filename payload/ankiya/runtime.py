@@ -20,6 +20,11 @@ on this exact Anki build) onto the pure core from ticket 16. Delivery legs:
   open pages   ``theme_did_change`` flips body classes but never reloads
                content, so the engine script is also eval'd into every live
                AnkiWebView.
+  review bar   the flat top toolbar paints an inline copy of the reviewer
+               page's computed background, refreshed by aqt only on the
+               card's ``updateToolbar`` ping (ankitects/anki#5240) — on
+               ``theme_did_change`` in review state the stale copy is
+               dropped and re-taken after the transition window.
 
 Between the palette read and the mapping sits the clamp (tickets 08/18):
 ``map_with_clamp`` nudges hostile foregrounds up to their WCAG floors —
@@ -84,6 +89,10 @@ ENGINE_SCRIPT_NAME = "ankiya_style"
 
 DEBOUNCE_MS = 150
 RETRY_MS = 200
+# The review toolbar's background re-copy waits out Anki's transition
+# window (props.TRANSITION = 180 ms): getComputedStyle mid-transition
+# returns the in-flight blend, and the copy would bake it into the strip.
+REVIEW_TOOLBAR_COPY_MS = 300
 
 
 def _log(message: str) -> None:
@@ -134,6 +143,10 @@ class Runtime:
                 mw.addonManager.setWebExports(ADDON_PACKAGE, r"web/.*\.css")
                 if not self._hook_installed:
                     gui_hooks.webview_will_set_content.append(self._on_will_set_content)
+                    # Fires for this runtime's applies and for Anki's own
+                    # pipeline (Preferences polarity flip, the 5-minute
+                    # portal poll) — the review-toolbar copy must ride both.
+                    gui_hooks.theme_did_change.append(self._on_theme_did_change)
                     self._hook_installed = True
                 # There is no config-change gui_hook in this Anki build; the
                 # addon manager calls per-package actions from the config
@@ -396,6 +409,37 @@ class Runtime:
                 restyled += 1
         _log(f"restyled {restyled} open webviews")
         return restyled
+
+    # -- review toolbar background -------------------------------------------
+
+    def _on_theme_did_change(self) -> None:
+        """Review state only: the flat top toolbar's background is an inline
+        copy of the reviewer page's computed background — aqt's
+        ``TopWebView.update_background_image``, re-run only when the card
+        page pings ``updateToolbar`` (upstream gap ankitects/anki#5240) —
+        so a live switch mid-review left the strip in the old polarity's
+        composite (field report 2026-08-31: a white bar over the dark
+        theme). Drop the stale inline copy right away, letting the
+        toolbar's own already-flipped vars take over, then re-take the copy
+        once the pages (and their transitions) have settled. Must never
+        raise into the hook: Anki's own pipeline calls this too."""
+        if mw.state != "review":
+            return
+        try:
+            mw.toolbarWeb.eval("document.body.style.removeProperty('background')")
+            QTimer.singleShot(REVIEW_TOOLBAR_COPY_MS, self._copy_review_toolbar_background)
+        except Exception:
+            _log(f"review toolbar refresh failed:\n{traceback.format_exc()}")
+
+    def _copy_review_toolbar_background(self) -> None:
+        try:
+            # Re-check on fire: the window may have left review within the
+            # delay, and an elevated toolbar keeps its CSS-var background.
+            if mw.state != "review":
+                return
+            mw.toolbarWeb.update_background_image()
+        except Exception:
+            _log(f"review toolbar background copy failed:\n{traceback.format_exc()}")
 
     # -- stdHtml pages -------------------------------------------------------
 
