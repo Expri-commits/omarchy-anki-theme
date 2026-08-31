@@ -1,7 +1,7 @@
 """Dev-only gate control add-on — the tiers' control channel (tickets 22/23).
 
 Never shipped: the harness copies this folder into the scratch base's
-``addons21/zz_gate_control`` (sorted after ``ankiya``, so it loads once the
+``addons21/zz_gate_control`` (sorted after ``anki_theme``, so it loads once the
 theming add-on is up). Pytest drives the running Anki through a command
 directory the add-on polls with a QTimer — one JSON ``*.cmd`` file in, one
 JSON ``*.done`` file out, then the cmd file is removed.
@@ -20,7 +20,7 @@ Commands (spec dict field ``cmd``):
   open_menu    popup one menubar menu non-blocking, optionally with a
                pre-highlighted action (the QSS ``:item:selected`` render)
   close_menu   close the popup
-  set_clamp    flip the ankiya ``contrast_clamp`` config through the real
+  set_clamp    flip the anki_theme ``contrast_clamp`` config through the real
                writeConfig + configUpdatedAction path the config dialog uses
   probe        report widget/webview rects (and DOM probe results from the
                versioned sample map's JS) for a target surface — everything
@@ -550,14 +550,14 @@ def _set_clamp(spec: dict) -> dict:
     new applied record."""
     enabled = bool(spec.get("enabled", True))
     mgr = mw.addonManager
-    conf = mgr.getConfig("ankiya") or {}
+    conf = mgr.getConfig("anki_theme") or {}
     if bool(conf.get("contrast_clamp", True)) == enabled:
         return {"ok": True, "changed": False, "contrast_clamp": enabled}
     conf["contrast_clamp"] = enabled
-    mgr.writeConfig("ankiya", conf)
-    action = mgr.configUpdatedAction("ankiya")
+    mgr.writeConfig("anki_theme", conf)
+    action = mgr.configUpdatedAction("anki_theme")
     if action is None:
-        return {"ok": False, "error": "ankiya registered no configUpdatedAction"}
+        return {"ok": False, "error": "anki_theme registered no configUpdatedAction"}
     action(conf)
     return {"ok": True, "changed": True, "contrast_clamp": enabled}
 

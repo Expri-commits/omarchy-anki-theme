@@ -39,7 +39,7 @@ GATE_DIR = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(GATE_DIR))
 sys.path.insert(0, str(GATE_DIR.parent))
 
-from ankiya import sync  # noqa: E402
+from anki_theme import sync  # noqa: E402
 from points import sample as _sample  # noqa: E402
 from smoke_live_switch import seed_base  # noqa: E402
 from smoke_sync_bootloader import make_bundled, stop  # noqa: E402
@@ -47,7 +47,7 @@ from smoke_sync_bootloader import make_bundled, stop  # noqa: E402
 pytestmark = pytest.mark.gate_full
 
 REPO = GATE_DIR.parent.parent
-PAYLOAD = REPO / "payload" / "ankiya"
+PAYLOAD = REPO / "payload" / "anki_theme"
 SERVICE_GATE = REPO / "service" / "gate.py"
 
 STARTUP_TIMEOUT_S = 240.0  # scratch-home first runs build Qt/web caches
@@ -179,25 +179,25 @@ def test_propagation_drift_converges_at_boot(gate3_down, leg_home):
     state = scratch / "state"
 
     bundled_v1 = make_bundled(scratch, None)
-    installed = addons / "ankiya"
+    installed = addons / "anki_theme"
     result = sync.ensure_current(bundled_v1, installed, state)
     assert result.status == sync.INSTALLED, f"install leg: {result}"
     meta = installed / "meta.json"
-    meta.write_text(json.dumps({"name": "Ankiya", "config": {"contrast_clamp": True}}))
+    meta.write_text(json.dumps({"name": "Anki Theme for Omarchy", "config": {"contrast_clamp": True}}))
 
-    bundled_v2 = make_bundled(scratch, "ankiya-v2")
+    bundled_v2 = make_bundled(scratch, "anki_theme-v2")
     anki_log = scratch / "anki.log"
     t_launch = time.time()
     proc = launch(
         base,
         anki_log,
-        {"HOME": str(leg_home), "ANKIYA_BUNDLED_PAYLOAD": str(bundled_v2)},
+        {"HOME": str(leg_home), "ANKI_THEME_BUNDLED_PAYLOAD": str(bundled_v2)},
     )
     try:
         record = wait_applied(leg_home, t_launch, STARTUP_TIMEOUT_S, "the drifted boot")
         assert record["errors"] == [], f"drifted boot apply errors: {record['errors']}"
         text = log_text(anki_log)
-        assert "[ankiya-v2]" in text, "the v2 marker never ran — old code themed"
+        assert "[anki_theme-v2]" in text, "the v2 marker never ran — old code themed"
         assert "sync: swapped to payload" in text, "the boot swap never happened"
         stamp = json.loads((installed / "payload.json").read_text())
         assert stamp["payloadHash"] == sync.tree_hash(bundled_v2), (
@@ -206,14 +206,14 @@ def test_propagation_drift_converges_at_boot(gate3_down, leg_home):
         assert json.loads(meta.read_text())["config"] == {"contrast_clamp": True}, (
             "the user's meta.json did not survive the boot swap"
         )
-        assert "[ankiya-v2]" in (installed / "runtime.py").read_text(), (
+        assert "[anki_theme-v2]" in (installed / "runtime.py").read_text(), (
             "the installed tree is not the drifted content"
         )
-        names = [p.name for p in base.iterdir() if p.name.startswith(".ankiya")]
-        assert not [n for n in names if n.startswith(".ankiya-stage-")], (
+        names = [p.name for p in base.iterdir() if p.name.startswith(".anki_theme")]
+        assert not [n for n in names if n.startswith(".anki_theme-stage-")], (
             f"stage dirs linger under the Anki2 root: {names}"
         )
-        assert any(n.startswith(".ankiya-old-") for n in names), (
+        assert any(n.startswith(".anki_theme-old-") for n in names), (
             "the deferred dot-old is missing at runtime"
         )
     finally:
@@ -236,16 +236,16 @@ def test_propagation_race_stays_convergent(gate3_down, leg_home):
     state = scratch / "state"
 
     bundled_v1 = make_bundled(scratch, None)
-    installed = addons / "ankiya"
+    installed = addons / "anki_theme"
     assert sync.ensure_current(bundled_v1, installed, state).status == sync.INSTALLED
-    bundled_v2 = make_bundled(scratch, "ankiya-v2")
+    bundled_v2 = make_bundled(scratch, "anki_theme-v2")
 
     anki_log = scratch / "anki.log"
     t_launch = time.time()
     proc = launch(
         base,
         anki_log,
-        {"HOME": str(leg_home), "ANKIYA_BUNDLED_PAYLOAD": str(bundled_v2)},
+        {"HOME": str(leg_home), "ANKI_THEME_BUNDLED_PAYLOAD": str(bundled_v2)},
     )
     try:
         # The service-mount shape: /usr/bin/python -B sync.py, the plugin's
@@ -274,7 +274,7 @@ def test_propagation_race_stays_convergent(gate3_down, leg_home):
     assert follow.status == sync.CURRENT, f"the tree did not converge: {follow}"
     stamp = json.loads((installed / "payload.json").read_text())
     assert stamp["payloadHash"] == sync.tree_hash(bundled_v2)
-    leftovers = [p.name for p in base.iterdir() if p.name.startswith(".ankiya")]
+    leftovers = [p.name for p in base.iterdir() if p.name.startswith(".anki_theme")]
     assert not leftovers, f"scratch dirs survived the settled tree: {leftovers}"
 
 
@@ -290,8 +290,8 @@ def test_propagation_downgrade_converges_backward(gate3_down, leg_home):
     state = scratch / "state"
 
     bundled_v1 = make_bundled(scratch, None)
-    bundled_v2 = make_bundled(scratch, "ankiya-v2")
-    installed = addons / "ankiya"
+    bundled_v2 = make_bundled(scratch, "anki_theme-v2")
+    installed = addons / "anki_theme"
     assert sync.ensure_current(bundled_v2, installed, state).status == sync.INSTALLED
 
     anki_log = scratch / "anki.log"
@@ -299,14 +299,14 @@ def test_propagation_downgrade_converges_backward(gate3_down, leg_home):
     proc = launch(
         base,
         anki_log,
-        {"HOME": str(leg_home), "ANKIYA_BUNDLED_PAYLOAD": str(bundled_v1)},
+        {"HOME": str(leg_home), "ANKI_THEME_BUNDLED_PAYLOAD": str(bundled_v1)},
     )
     try:
         record = wait_applied(leg_home, t_launch, STARTUP_TIMEOUT_S, "the downgrade boot")
         assert record["errors"] == [], f"downgrade boot apply errors: {record['errors']}"
         text = log_text(anki_log)
         assert "sync: swapped to payload" in text, "the downgrade swap never happened"
-        assert "[ankiya-v2]" not in text, "v2 code ran after a backward convergence"
+        assert "[anki_theme-v2]" not in text, "v2 code ran after a backward convergence"
         stamp = json.loads((installed / "payload.json").read_text())
         assert stamp["payloadHash"] == sync.tree_hash(bundled_v1), (
             "the installed stamp did not converge backward to v1"
@@ -353,7 +353,7 @@ def _inert_addon_instance(scratch: pathlib.Path, leg_home: pathlib.Path):
     seed_base(base, theme=Theme.DARK)
     addons = base / "addons21"
     addons.mkdir()
-    (addons / "ankiya").symlink_to(PAYLOAD)
+    (addons / "anki_theme").symlink_to(PAYLOAD)
     shutil.copytree(
         GATE_DIR / "gate_addon",
         addons / "zz_gate_control",
@@ -363,7 +363,7 @@ def _inert_addon_instance(scratch: pathlib.Path, leg_home: pathlib.Path):
     ctl.mkdir()
     return {
         "HOME": str(leg_home),
-        "ANKIYA_BUNDLED_PAYLOAD": str(PAYLOAD),
+        "ANKI_THEME_BUNDLED_PAYLOAD": str(PAYLOAD),
         "GATE_CTL_DIR": str(ctl),
     }, ctl
 
@@ -464,7 +464,7 @@ def test_consent_reinstall_standalone(gate3_down):
     anki2 = scratch / "Anki2"
     (anki2 / "addons21").mkdir(parents=True)
     state = scratch / "state"
-    installed = anki2 / "addons21" / "ankiya"
+    installed = anki2 / "addons21" / "anki_theme"
     shim = version_shim(scratch / "shim", "current")
     gate_env = {"PATH": f"{shim}:{os.environ['PATH']}"}
 
@@ -479,7 +479,7 @@ def test_consent_reinstall_standalone(gate3_down):
     # 1 — no consent recorded: ask, and the exec is the grant helper itself.
     decision = gate()
     assert decision["action"] == "ask_consent", decision
-    assert "addons21/ankiya" in decision["toast"]["body"], decision
+    assert "addons21/anki_theme" in decision["toast"]["body"], decision
     argv = decision["exec"]
     assert argv[0] == "/usr/bin/python" and argv[1] == "-B" and argv[2].endswith("grant.py")
 
@@ -506,7 +506,7 @@ def test_consent_reinstall_standalone(gate3_down):
     shutil.rmtree(installed)
     decision = gate()
     assert decision["action"] == "offer_reinstall", decision
-    assert "addons21/ankiya" in decision["toast"]["body"], decision
+    assert "addons21/anki_theme" in decision["toast"]["body"], decision
     reinstall = run_service(decision["exec"])
     assert reinstall.returncode == 0, f"reinstall sync failed: {reinstall.stderr[-400:]}"
     assert installed.is_dir(), "the reinstall never landed"
@@ -531,7 +531,7 @@ def test_standalone_theming_continues(gate3_down, leg_home):
     addons = base / "addons21"
     addons.mkdir()
     state = scratch / "state"
-    installed = addons / "ankiya"
+    installed = addons / "anki_theme"
     bundled_v1 = make_bundled(scratch, None)
     assert sync.ensure_current(bundled_v1, installed, state).status == sync.INSTALLED
     before = json.loads((installed / "payload.json").read_text())["payloadHash"]
@@ -541,7 +541,7 @@ def test_standalone_theming_continues(gate3_down, leg_home):
     proc = launch(
         base,
         anki_log,
-        {"HOME": str(leg_home), "ANKIYA_BUNDLED_PAYLOAD": str(scratch / "gone")},
+        {"HOME": str(leg_home), "ANKI_THEME_BUNDLED_PAYLOAD": str(scratch / "gone")},
     )
     try:
         record = wait_applied(leg_home, t_launch, STARTUP_TIMEOUT_S, "the standalone boot")
@@ -560,7 +560,7 @@ def test_drift_retract_surfaces_once(gate3_down, leg_home):
     """Retract-class inventory drift: one log line + one transient tooltip
     on the first start; the state-dir signature dedup keeps the second start
     silent. The tooltip copy is the bundled one (a bundle dir exists)."""
-    from ankiya.drift import MARKER, RESTORE_BUNDLED
+    from anki_theme.drift import MARKER, RESTORE_BUNDLED
 
     scratch = leg_dir(gate3_down, "drift-retract")
     base = scratch / "base"
@@ -568,15 +568,15 @@ def test_drift_retract_surfaces_once(gate3_down, leg_home):
     seed_base(base)
     addons = base / "addons21"
     addons.mkdir()
-    (addons / "ankiya").symlink_to(PAYLOAD)
+    (addons / "anki_theme").symlink_to(PAYLOAD)
     shutil.copytree(GATE_DIR / "drift_addon", addons / "aa_gate_drift")
     drift_log = scratch / "tooltips.jsonl"
 
     env = {
         "HOME": str(leg_home),
-        "ANKIYA_BUNDLED_PAYLOAD": str(PAYLOAD),
-        "ANKIYA_DRIFT_MODE": "retract",
-        "ANKIYA_DRIFT_LOG": str(drift_log),
+        "ANKI_THEME_BUNDLED_PAYLOAD": str(PAYLOAD),
+        "ANKI_THEME_DRIFT_MODE": "retract",
+        "ANKI_THEME_DRIFT_LOG": str(drift_log),
     }
     anki_log = scratch / "first.log"
     t_launch = time.time()
@@ -610,7 +610,7 @@ def test_drift_retract_surfaces_once(gate3_down, leg_home):
 
 def test_drift_add_is_log_only(gate3_down, leg_home):
     """Additive churn nags nobody: the log line fires, no tooltip, no marker."""
-    from ankiya.drift import MARKER
+    from anki_theme.drift import MARKER
 
     # The retract leg ran first against this shared leg_home and legitimately
     # recorded its dedup signature; this leg asserts *this start* recorded
@@ -622,15 +622,15 @@ def test_drift_add_is_log_only(gate3_down, leg_home):
     seed_base(base)
     addons = base / "addons21"
     addons.mkdir()
-    (addons / "ankiya").symlink_to(PAYLOAD)
+    (addons / "anki_theme").symlink_to(PAYLOAD)
     shutil.copytree(GATE_DIR / "drift_addon", addons / "aa_gate_drift")
     drift_log = scratch / "tooltips.jsonl"
 
     env = {
         "HOME": str(leg_home),
-        "ANKIYA_BUNDLED_PAYLOAD": str(PAYLOAD),
-        "ANKIYA_DRIFT_MODE": "add",
-        "ANKIYA_DRIFT_LOG": str(drift_log),
+        "ANKI_THEME_BUNDLED_PAYLOAD": str(PAYLOAD),
+        "ANKI_THEME_DRIFT_MODE": "add",
+        "ANKI_THEME_DRIFT_LOG": str(drift_log),
     }
     anki_log = scratch / "anki.log"
     t_launch = time.time()
@@ -639,7 +639,7 @@ def test_drift_add_is_log_only(gate3_down, leg_home):
         wait_applied(leg_home, t_launch, STARTUP_TIMEOUT_S, "the add-drift start")
         text = log_text(anki_log)
         assert "aqt color vars drifted from the snapshot" in text, text[-2000:]
-        assert "added 1 (ANKIYA_GATE_EXTRA)" in text, text[-2000:]
+        assert "added 1 (ANKI_THEME_GATE_EXTRA)" in text, text[-2000:]
         assert not drift_log.exists(), "add-class drift must never tooltip"
         assert not (leg_home / ".local/state/omarchy/anki-theme/drift_seen.json").exists(), (
             "add-class drift must never record a signature"
@@ -655,7 +655,7 @@ def test_addon_startup_cost_standing(gate3_down, leg_home):
     """The standing startup metric's session: launch→profile-open with the
     add-on enabled vs disabled (meta.json ``disabled``), 6 launches each,
     first of every series dropped as Qt-cache warmup, mean of the remaining
-    5 pairs. The probe add-on loads after ``ankiya`` (sorted ``zz_``), so its
+    5 pairs. The probe add-on loads after ``anki_theme`` (sorted ``zz_``), so its
     hook timestamps a profile open that already carried the whole add-on
     cost — imports, bootloader sync check, hook wiring, startup apply."""
     scratch = leg_dir(gate3_down, "startup-cost")
@@ -664,7 +664,7 @@ def test_addon_startup_cost_standing(gate3_down, leg_home):
     seed_base(base)
     addons = base / "addons21"
     addons.mkdir()
-    installed = addons / "ankiya"
+    installed = addons / "anki_theme"
     bundled = make_bundled(scratch, None)
     assert sync.ensure_current(bundled, installed, scratch / "state").status == sync.INSTALLED
 
@@ -673,7 +673,7 @@ def test_addon_startup_cost_standing(gate3_down, leg_home):
     probe_init.parent.mkdir()
     probe_init.write_text(
         "import os, time\n"
-        "path = os.environ.get('ANKIYA_PROBE_LOG')\n"
+        "path = os.environ.get('ANKI_THEME_PROBE_LOG')\n"
         "if path:\n"
         "    from aqt import gui_hooks\n"
         "    def _mark():\n"
@@ -686,8 +686,8 @@ def test_addon_startup_cost_standing(gate3_down, leg_home):
     meta_backup = meta_path.read_text()
     env = {
         "HOME": str(leg_home),
-        "ANKIYA_BUNDLED_PAYLOAD": str(bundled),
-        "ANKIYA_PROBE_LOG": str(probe_log),
+        "ANKI_THEME_BUNDLED_PAYLOAD": str(bundled),
+        "ANKI_THEME_PROBE_LOG": str(probe_log),
     }
 
     def timed_launch() -> float:
@@ -744,19 +744,19 @@ def test_sync_swap_cost(gate3_down):
     (it fires only on drift in production)."""
     scratch = leg_dir(gate3_down, "swap-cost")
     bundled_v1 = make_bundled(scratch, None)
-    bundled_v2 = make_bundled(scratch, "ankiya-v2")
+    bundled_v2 = make_bundled(scratch, "anki_theme-v2")
     state = scratch / "state"
 
     installs = []
     for index in range(20):
-        target = scratch / f"addons{index}" / "ankiya"
+        target = scratch / f"addons{index}" / "anki_theme"
         target.parent.mkdir(parents=True, exist_ok=True)
         t0 = time.perf_counter()
         result = sync.ensure_current(bundled_v1, target, state)
         installs.append((time.perf_counter() - t0) * 1000)
         assert result.status == sync.INSTALLED
 
-    installed = scratch / "addons0" / "ankiya"
+    installed = scratch / "addons0" / "anki_theme"
     t0 = time.perf_counter()
     result = sync.ensure_current(bundled_v2, installed, state)
     swap_ms = (time.perf_counter() - t0) * 1000

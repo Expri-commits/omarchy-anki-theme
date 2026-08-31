@@ -7,8 +7,8 @@ render legs (the gate asserts the render against this module's prediction).
 import colorsys
 
 import pytest
-from ankiya.palette import contrast_ratio, map_palette
-from ankiya.theme_clamp import (
+from anki_theme.palette import contrast_ratio, map_palette
+from anki_theme.theme_clamp import (
     BLACK,
     FG_FLOOR,
     LINK_FLOOR,

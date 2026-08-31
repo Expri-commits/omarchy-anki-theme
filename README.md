@@ -1,10 +1,6 @@
-# Ankiya
+# Anki Theme for Omarchy
 
 Anki, decked out in whatever Omarchy theme is active — live, full surface, no restart.
-
-*Ankiya* = *anki* (暗記, "memorization" — where Anki gets its name) + the shop
-suffix *-ya* (屋). Theming today; the shop stays open for whatever else Anki
-needs from Omarchy.
 
 ![Anki following an Omarchy theme switch](preview.png)
 
@@ -74,7 +70,7 @@ omarchy plugin add https://github.com/Expri-commits/omarchy-anki-theme
 
 When Anki is present, the plugin asks for consent on first run with an Omarchy
 notification: click it to allow the bundled add-on to be installed into Anki's
-add-on folder (`~/.local/share/Anki2/addons21/ankiya`). Nothing touches your
+add-on folder (`~/.local/share/Anki2/addons21/anki_theme`). Nothing touches your
 Anki configuration before you say yes — not clicking leaves Anki untouched. Start
 Anki (or restart it, if it's already running) and it follows your theme.
 
@@ -90,7 +86,7 @@ and Anki stays as it is.
 Two halves, two steps:
 
 1. Remove the plugin: `omarchy plugin remove io.github.expri-commits.anki-theme`
-2. Remove the add-on from Anki: **Tools → Add-ons → Ankiya → Delete**
+2. Remove the add-on from Anki: **Tools → Add-ons → Anki Theme for Omarchy → Delete**
 
 Removing only the plugin leaves the add-on running inside Anki — it keeps
 theming, it just stops receiving updates. Step 2 is what turns the colors off.
@@ -108,7 +104,7 @@ consent again.
 
 ## Configuration
 
-Open **Tools → Add-ons → Ankiya → Config** in Anki:
+Open **Tools → Add-ons → Anki Theme for Omarchy → Config** in Anki:
 
 | Key | Default | Meaning |
 | --- | --- | --- |

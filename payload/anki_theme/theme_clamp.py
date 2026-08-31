@@ -49,7 +49,7 @@ from __future__ import annotations
 import colorsys
 from dataclasses import dataclass, replace
 
-from ankiya.palette import Mapping, contrast_ratio, map_palette, relative_luminance
+from anki_theme.palette import Mapping, contrast_ratio, map_palette, relative_luminance
 
 FG_FLOOR = 4.5
 LINK_FLOOR = 3.0

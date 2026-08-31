@@ -3,7 +3,7 @@
 The sys.path setup for the whole gate lives here and only here: the vendored
 Pillow dir (python-pillow, same cp314 ABI as the system python — bootstrap
 `python -m pip install --target tests/gate/vendor pillow`), the payload tree
-(`ankiya.…` imports), and tests/ (`smoke_live_switch.seed_base`). A missing
+(`anki_theme.…` imports), and tests/ (`smoke_live_switch.seed_base`). A missing
 vendor dir must not break collection of the (deselected) gate modules in
 unmarked runs; the PIL import itself stays lazy in sampling.py until a gate
 test actually runs.

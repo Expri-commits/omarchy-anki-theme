@@ -7,7 +7,7 @@ Not collected by pytest — it drives the real GUI stack. Three legs:
   A. drift demo    install the real payload via the sync routine (the
                    service's post-consent leg), seed a user config edit in
                    the installed meta.json, drift the *bundled* tree to a
-                   marked v2 (its runtime logs ``[ankiya-v2]``), then start
+                   marked v2 (its runtime logs ``[anki_theme-v2]``), then start
                    Anki against the drifted bundle — no shell restart, no
                    service involved. Assert the boot converged: stamp equals
                    the bundled hash, the v2 code is what themed (the marker
@@ -17,12 +17,12 @@ Not collected by pytest — it drives the real GUI stack. Three legs:
                    continues from the installed copy, the stamp does not
                    move, and the standalone decision is logged.
   C. startup cost  the standing metric: a probe add-on (``zz_probe``,
-                   sorted after ``ankiya`` so its profile_did_open hook
-                   fires after Ankiya's start completed) timestamps
+                   sorted after ``anki_theme`` so its profile_did_open hook
+                   fires after Anki Theme's start completed) timestamps
                    profile-open; 6 launches with the add-on enabled vs 6
                    disabled via meta.json (first of each dropped as Qt-cache
                    warmup), mean of the remaining 5. Both series pin
-                   ANKIYA_BUNDLED_PAYLOAD to the v2 bundle so the sync-check
+                   ANKI_THEME_BUNDLED_PAYLOAD to the v2 bundle so the sync-check
                    cost is measured against a real, current bundle.
 
 Run on system python (the base seeding imports aqt): ``/usr/bin/python
@@ -46,10 +46,10 @@ import tempfile
 import time
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
-PAYLOAD = REPO / "payload" / "ankiya"
+PAYLOAD = REPO / "payload" / "anki_theme"
 sys.path.insert(0, str(REPO / "payload"))
 sys.path.insert(0, str(REPO / "tests"))
-from ankiya import sync  # noqa: E402
+from anki_theme import sync  # noqa: E402
 from smoke_live_switch import seed_base  # noqa: E402
 
 STATE_DIR = pathlib.Path.home() / ".local/state/omarchy/anki-theme"
@@ -57,15 +57,15 @@ APPLIED_LOG = STATE_DIR / "applied.jsonl"
 STARTUP_TIMEOUT_S = 240.0
 LAUNCH_TIMEOUT_S = 120.0
 USER_META = {
-    "name": "Ankiya",
+    "name": "Anki Theme for Omarchy",
     "homepage": "https://github.com/Expri-commits/omarchy-anki-theme",
     "config": {"contrast_clamp": True},
 }
-# The probe timestamps profile_did_open after Ankiya's hook (add-ons load in
+# The probe timestamps profile_did_open after Anki Theme's hook (add-ons load in
 # sorted order), so its launch→mark time contains the full add-on cost.
 PROBE = (
     "import os, time\n"
-    "path = os.environ.get('ANKIYA_PROBE_LOG')\n"
+    "path = os.environ.get('ANKI_THEME_PROBE_LOG')\n"
     "if path:\n"
     "    from aqt import gui_hooks\n"
     "    def _mark():\n"
@@ -110,7 +110,7 @@ def make_bundled(scratch: pathlib.Path, marker: str | None) -> pathlib.Path:
     shutil.copytree(PAYLOAD, bundled, ignore=shutil.ignore_patterns("__pycache__", "web"))
     if marker:
         runtime = bundled / "runtime.py"
-        old = 'print(f"[ankiya] {message}", flush=True)'
+        old = 'print(f"[anki_theme] {message}", flush=True)'
         new = f'print(f"[{marker}] {{message}}", flush=True)'
         text = runtime.read_text()
         check(old in text, "the runtime _log anchor moved — update the marker patch")
@@ -137,16 +137,16 @@ def stop(proc) -> None:
 def phase_a(scratch: pathlib.Path, base: pathlib.Path) -> pathlib.Path:
     print("-- A: drift demo (bootloader converges at Anki start, no shell)")
     bundled_v1 = make_bundled(scratch, None)
-    installed = base / "addons21" / "ankiya"
+    installed = base / "addons21" / "anki_theme"
     result = sync.ensure_current(bundled_v1, installed, STATE_DIR)
     check(result.status == "installed", f"install leg returned {result.status}")
     installed_meta = installed / "meta.json"
     installed_meta.write_text(json.dumps(USER_META, indent=2) + "\n")
 
-    bundled_v2 = make_bundled(scratch, "ankiya-v2")
+    bundled_v2 = make_bundled(scratch, "anki_theme-v2")
     anki_log = scratch / "a.log"
     t_launch = time.time()
-    anki = launch(base, anki_log, {"ANKIYA_BUNDLED_PAYLOAD": str(bundled_v2)})
+    anki = launch(base, anki_log, {"ANKI_THEME_BUNDLED_PAYLOAD": str(bundled_v2)})
     try:
         startup = wait_for(
             lambda r: r["reason"] == "startup" and r["applied_at"] > t_launch,
@@ -155,7 +155,7 @@ def phase_a(scratch: pathlib.Path, base: pathlib.Path) -> pathlib.Path:
         )
         check(startup["errors"] == [], f"startup leg errors: {startup['errors']}")
         log_text = anki_log.read_text()
-        check("[ankiya-v2]" in log_text, "the v2 marker never ran — old code themed")
+        check("[anki_theme-v2]" in log_text, "the v2 marker never ran — old code themed")
         check("sync: swapped to payload" in log_text, "the boot swap never happened")
         stamp = json.loads((installed / "payload.json").read_text())
         check(
@@ -167,19 +167,19 @@ def phase_a(scratch: pathlib.Path, base: pathlib.Path) -> pathlib.Path:
             "the user's meta.json did not survive the boot swap",
         )
         check(
-            "[ankiya-v2]" in (installed / "runtime.py").read_text(),
+            "[anki_theme-v2]" in (installed / "runtime.py").read_text(),
             "installed tree is not the drifted content",
         )
         # The swap's dot-siblings live under the base (the Anki2 root): no
         # stage may linger, and the deferred dot-old must be present until
         # this Anki exits (the bootloader's atexit removes it).
-        names = [p.name for p in base.iterdir() if p.name.startswith(".ankiya")]
+        names = [p.name for p in base.iterdir() if p.name.startswith(".anki_theme")]
         check(
-            not [n for n in names if n.startswith(".ankiya-stage-")],
+            not [n for n in names if n.startswith(".anki_theme-stage-")],
             f"stage dirs linger under the Anki2 root: {names}",
         )
         check(
-            any(n.startswith(".ankiya-old-") for n in names),
+            any(n.startswith(".anki_theme-old-") for n in names),
             "the deferred dot-old is missing at runtime",
         )
         print(f"PASS: converged at boot, v2 live (apply {startup['apply_ms']}ms)")
@@ -194,11 +194,11 @@ def phase_a(scratch: pathlib.Path, base: pathlib.Path) -> pathlib.Path:
 
 def phase_b(scratch: pathlib.Path, base: pathlib.Path) -> None:
     print("-- B: standalone (plugin payload gone: theming on, no updates)")
-    installed = base / "addons21" / "ankiya"
+    installed = base / "addons21" / "anki_theme"
     before = json.loads((installed / "payload.json").read_text())["payloadHash"]
     anki_log = scratch / "b.log"
     t_launch = time.time()
-    anki = launch(base, anki_log, {"ANKIYA_BUNDLED_PAYLOAD": str(scratch / "gone")})
+    anki = launch(base, anki_log, {"ANKI_THEME_BUNDLED_PAYLOAD": str(scratch / "gone")})
     try:
         startup = wait_for(
             lambda r: r["reason"] == "startup" and r["applied_at"] > t_launch,
@@ -221,11 +221,11 @@ def phase_c(scratch: pathlib.Path, base: pathlib.Path, bundled_v2: pathlib.Path)
     probe_init = base / "addons21" / "zz_probe" / "__init__.py"
     probe_init.parent.mkdir(parents=True)
     probe_init.write_text(PROBE)
-    installed_meta = base / "addons21" / "ankiya" / "meta.json"
+    installed_meta = base / "addons21" / "anki_theme" / "meta.json"
     meta_backup = installed_meta.read_text()
     env = {
-        "ANKIYA_PROBE_LOG": str(probe_log),
-        "ANKIYA_BUNDLED_PAYLOAD": str(bundled_v2),
+        "ANKI_THEME_PROBE_LOG": str(probe_log),
+        "ANKI_THEME_BUNDLED_PAYLOAD": str(bundled_v2),
     }
 
     def timed_launch() -> float:
@@ -269,7 +269,7 @@ def main() -> int:
     if subprocess.run(["pgrep", "-x", "anki"], capture_output=True).returncode == 0:
         fail("an Anki instance is already running — close it first")
         return 1
-    scratch = pathlib.Path(tempfile.mkdtemp(prefix="ankiya-sync-smoke-"))
+    scratch = pathlib.Path(tempfile.mkdtemp(prefix="anki_theme-sync-smoke-"))
     base = scratch / "base"
     base.mkdir()
     seed_base(base)

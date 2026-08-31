@@ -1,6 +1,6 @@
 """Tier 1 — the var-inventory tripwire and the drift check (tickets 15/21).
 
-The snapshot and diff routine ship in the payload (``ankiya/drift.py``);
+The snapshot and diff routine ship in the payload (``anki_theme/drift.py``);
 these tests are the dev-side enforcement point. The runtime half is the same
 ``run_check`` driven with fakes here — the live drift smoke is tier 3
 (ticket 23).
@@ -11,7 +11,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from ankiya.drift import (
+from anki_theme.drift import (
     MARKER,
     SNAPSHOT_FILE,
     UNREADABLE_SIGNATURE,
@@ -23,7 +23,7 @@ from ankiya.drift import (
     run_check,
     seen_signatures,
 )
-from ankiya.palette import VAR_NAMES
+from anki_theme.palette import VAR_NAMES
 
 
 def var() -> dict[str, str]:

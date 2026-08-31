@@ -2,8 +2,8 @@
 
 import json
 
-from ankiya.cssgen import STYLE_ID, css_text, engine_script, to_css_var
-from ankiya.palette import VAR_NAMES, map_palette
+from anki_theme.cssgen import STYLE_ID, css_text, engine_script, to_css_var
+from anki_theme.palette import VAR_NAMES, map_palette
 from theme_fixtures import theme_palette
 
 

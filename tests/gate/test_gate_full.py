@@ -42,8 +42,8 @@ import pytest
 GATE_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(GATE_DIR))
 
-from ankiya.palette import VAR_RULES  # noqa: E402
-from ankiya.theme_clamp import clamp_palette, map_with_clamp  # noqa: E402
+from anki_theme.palette import VAR_RULES  # noqa: E402
+from anki_theme.theme_clamp import clamp_palette, map_with_clamp  # noqa: E402
 from oracles import ThemeOracle, rgb  # noqa: E402
 from pathological import MODES, P1, P2, P3, P4, P5  # noqa: E402
 from points import sample as _sample  # noqa: E402
@@ -71,11 +71,11 @@ from theme_fixtures import THEMES  # noqa: E402
 # The palette each user-theme fork carries, and the fork's mode (matches its
 # background family so night_mode and the palette agree).
 PATHOLOGICAL: dict[str, tuple[dict[str, str], str]] = {
-    "ankiya-gate-p1": (P1, MODES["p1"]),
-    "ankiya-gate-p2": (P2, MODES["p2"]),
-    "ankiya-gate-p3": (P3, MODES["p3"]),
-    "ankiya-gate-p4": (P4, MODES["p4"]),
-    "ankiya-gate-p5": (P5, MODES["p5"]),
+    "anki_theme-gate-p1": (P1, MODES["p1"]),
+    "anki_theme-gate-p2": (P2, MODES["p2"]),
+    "anki_theme-gate-p3": (P3, MODES["p3"]),
+    "anki_theme-gate-p4": (P4, MODES["p4"]),
+    "anki_theme-gate-p5": (P5, MODES["p5"]),
 }
 
 
@@ -223,7 +223,7 @@ def assert_clamp_lines(session, adjustments: tuple) -> None:
         line for line in session.anki_log.read_text().splitlines() if "contrast clamp:" in line
     ]
     for adjustment in adjustments:
-        expected = f"[ankiya] {adjustment.line()}"
+        expected = f"[anki_theme] {adjustment.line()}"
         assert expected in logged, (
             f"clamp log line missing: {expected!r}\nlogged clamp lines: {logged[-10:]}"
         )
@@ -456,14 +456,14 @@ def test_p2_link_lands_in_delivered_css(gate3_session, add_window, p_themes):
     from gate_harness import PAYLOAD
 
     session = gate3_session
-    palette = PATHOLOGICAL["ankiya-gate-p2"][0]
+    palette = PATHOLOGICAL["anki_theme-gate-p2"][0]
     clamped = clamp_palette(palette).palette
     assert clamped["bright_blue"] != palette["bright_blue"], (
         "tier-1 predicted a link adjustment for P2 — the fixture moved"
     )
 
-    session.switch("ankiya-gate-p2")
-    css = (PAYLOAD / "web" / "ankiya.css").read_text()
+    session.switch("anki_theme-gate-p2")
+    css = (PAYLOAD / "web" / "anki_theme.css").read_text()
     expected = f"--fg-link: {clamped['bright_blue']};"
     assert expected in css, (
         f"delivered CSS does not carry the clamped link {expected!r} "
@@ -477,12 +477,12 @@ def test_p1_faithful_mode(gate3_session, add_window, p_themes):
     current (P1) palette verbatim: nothing clamped, the authored foreground
     on screen, its failure to read honestly visible in the render."""
     session = gate3_session
-    oracle, palette, adjustments = p_oracle("ankiya-gate-p1")
+    oracle, palette, adjustments = p_oracle("anki_theme-gate-p1")
     # The p2-link leg ran since the parametrized renders and left the session
     # on p2 — switch back through the production path so the config re-apply
     # below re-applies *this* palette (the record's theme field is the live
     # theme.name, not the config flip's subject).
-    record, _t_swap, _t_set_done = session.switch("ankiya-gate-p1")
+    record, _t_swap, _t_set_done = session.switch("anki_theme-gate-p1")
     assert_pathological_record(record, _t_swap, oracle, adjustments, "p1-prefaithful", session)
 
     # The config flip re-applies the current (P1) palette with reason
@@ -493,7 +493,7 @@ def test_p1_faithful_mode(gate3_session, add_window, p_themes):
         reply = session.cmd("set_clamp", {"enabled": False})
         assert reply["ok"] and reply["changed"], f"clamp flip failed: {reply}"
         record = session.wait_applied(
-            lambda r: r["reason"] == "config" and r["theme"] == "ankiya-gate-p1",
+            lambda r: r["reason"] == "config" and r["theme"] == "anki_theme-gate-p1",
             15.0,
             "the faithful re-apply",
         )
@@ -520,7 +520,7 @@ def test_p1_faithful_mode(gate3_session, add_window, p_themes):
         session.cmd("set_clamp", {"enabled": True})
 
     record = session.wait_applied(
-        lambda r: r["reason"] == "config" and r["theme"] == "ankiya-gate-p1",
+        lambda r: r["reason"] == "config" and r["theme"] == "anki_theme-gate-p1",
         15.0,
         "the clamped re-apply",
     )

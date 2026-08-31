@@ -20,7 +20,7 @@ Consent  No ``consent.json`` granting yet and Anki's data dir exists: ask
          writes nothing at all — the gate only reads.
 
 Reinstall  Consent on file, our ``installed.json`` marker in the state dir,
-         but no ``addons21/ankiya``: the add-on was deleted inside Anki
+         but no ``addons21/anki_theme``: the add-on was deleted inside Anki
          (ticket 12). Never resurrect silently — one click-to-reinstall
          toast per service start; ignoring it leaves Anki as it is.
 
@@ -65,7 +65,7 @@ ASK_CONSENT = "ask_consent"
 OFFER_REINSTALL = "offer_reinstall"
 SYNC = "sync"
 
-ADDON_SEGMENT = "addons21/ankiya"
+ADDON_SEGMENT = "addons21/anki_theme"
 
 # A version line looks like ``4.0.1-1`` (major.minor.patch-channel); the
 # channel suffix and anything after it are ignored. Two components are the
@@ -150,11 +150,11 @@ def decide(
     where the action is a notification).
     """
     grant_helper = plugin_dir / "service" / "grant.py"
-    bundled = plugin_dir / "payload" / "ankiya"
+    bundled = plugin_dir / "payload" / "anki_theme"
     installed = anki2_root / ADDON_SEGMENT
     sync_argv = python_argv(bundled / "sync.py", bundled, installed, state_dir)
     consent_toast = {
-        "headline": "Ankiya: install its Anki add-on?",
+        "headline": "Anki Theme: install its Anki add-on?",
         "body": (
             "Click to allow placing the add-on in "
             f"{installed} — it recolors Anki in your Omarchy theme and keeps "
@@ -162,7 +162,7 @@ def decide(
         ),
     }
     reinstall_toast = {
-        "headline": "Ankiya: the Anki add-on was removed",
+        "headline": "Anki Theme: the Anki add-on was removed",
         "body": (f"Click to reinstall it to {installed}. Ignore this and Anki stays as it is."),
     }
 

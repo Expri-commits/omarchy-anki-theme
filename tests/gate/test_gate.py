@@ -38,7 +38,7 @@ import pytest
 GATE_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(GATE_DIR))
 
-from ankiya.palette import VAR_RULES  # noqa: E402
+from anki_theme.palette import VAR_RULES  # noqa: E402
 from oracles import ThemeOracle, rgb  # noqa: E402
 from points import sample as _sample  # noqa: E402
 from sampling import Shot, contrast_ratio  # noqa: E402

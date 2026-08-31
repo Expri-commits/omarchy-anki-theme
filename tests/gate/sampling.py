@@ -96,8 +96,8 @@ def scan_for_color(
 
 def contrast_ratio(a: tuple[int, int, int], b: tuple[int, int, int]) -> float:
     """WCAG ratio between two sampled rgb triples — one WCAG math source: the
-    pure `ankiya.palette` helpers, via hex round-trip."""
-    from ankiya.palette import contrast_ratio as hex_ratio
+    pure `anki_theme.palette` helpers, via hex round-trip."""
+    from anki_theme.palette import contrast_ratio as hex_ratio
 
     def hexed(rgb: tuple[int, int, int]) -> str:
         return "#{:02x}{:02x}{:02x}".format(*rgb)

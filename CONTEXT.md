@@ -22,19 +22,19 @@ _Avoid_: plugin (when inside Anki), extension
 
 **Payload**:
 The add-on's file tree as bundled inside the plugin — the single source of truth
-the installed copy under `addons21/ankiya/` is made from.
+the installed copy under `addons21/anki_theme/` is made from.
 _Avoid_: bundle, add-on package (when meaning the bundled tree)
 
 **Stamp**:
 The installed copy's identity and freshness record: `payload.json` inside
-`ankiya/`, shipping identity fields and carrying the `payloadHash` (content hash
+`anki_theme/`, shipping identity fields and carrying the `payloadHash` (content hash
 of the bundled payload tree) written at install or swap time.
 _Avoid_: version file, version stamp
 
 **Sync**:
-The one routine (`ankiya/sync.py`, stdlib-only, pure functions over paths) that
+The one routine (`anki_theme/sync.py`, stdlib-only, pure functions over paths) that
 installs, updates, and verifies the installed copy against the bundled payload.
-The only writer to `ankiya/`; driven by fresh code only (service mount, add-on
+The only writer to `anki_theme/`; driven by fresh code only (service mount, add-on
 startup).
 _Avoid_: updater, installer (sync is both)
 
@@ -44,7 +44,7 @@ outside `addons21` and double-renaming it into place, preserving `meta.json`.
 _Avoid_: in-place update, overwrite
 
 **Bootloader**:
-The shape of `ankiya/__init__.py`: run sync first, then hand off to
+The shape of `anki_theme/__init__.py`: run sync first, then hand off to
 `runtime.start()` — so a payload update can land at Anki startup without a
 shell restart.
 _Avoid_: loader, self-update shim
@@ -59,7 +59,7 @@ _Avoid_: orphaned add-on, degraded mode
 
 **Snapshot**:
 The vendored name-set of the installed Anki's `aqt.colors` vars the mapping
-was built against (`ankiya/var_snapshot.txt`, shipped in the payload).
+was built against (`anki_theme/var_snapshot.txt`, shipped in the payload).
 Tier 1's tripwire asserts the mapping covers it; regenerated via
 `scripts/regen_var_snapshot.py` on every Anki upgrade.
 _Avoid_: baseline file, golden file

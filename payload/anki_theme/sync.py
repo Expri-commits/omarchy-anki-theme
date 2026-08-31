@@ -1,12 +1,12 @@
 """Sync: keep the installed add-on converged on the plugin's bundled payload.
 
 Ticket 12's protocol, built by ticket 19. The bundled payload tree inside
-the Omarchy plugin is the single source of truth; ``addons21/ankiya/`` is a
+the Omarchy plugin is the single source of truth; ``addons21/anki_theme/`` is a
 stamped cache of it, never an independent copy. One stdlib-only routine
 serves both fresh-code drivers — the plugin service (as a
 ``/usr/bin/python sync.py`` subprocess against the bundled tree) and the
 add-on's bootloader (``__init__.py`` imports it before anything else) — so
-this module must run both as ``ankiya.sync`` inside Anki and as a bare
+this module must run both as ``anki_theme.sync`` inside Anki and as a bare
 script: no relative imports, no aqt, no caller assumptions.
 
 Stamp   sha256 over the bundled tree's sorted relative paths + file bytes
@@ -51,13 +51,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 SCHEMA = 1
-PRODUCT = "ankiya"
+PRODUCT = "anki_theme"
 
 # Dot-prefixed siblings of addons21 (under the Anki2 root, outside the one
 # directory Anki scans); <pid>-<time_ns>-<rand> keeps a service-mount sync
 # and an Anki-startup sync from ever colliding on a name.
-STAGE_PREFIX = ".ankiya-stage-"
-OLD_PREFIX = ".ankiya-old-"
+STAGE_PREFIX = ".anki_theme-stage-"
+OLD_PREFIX = ".anki_theme-old-"
 
 HASH_SKIP_DIRS = frozenset({"__pycache__"})
 HASH_SKIP_SUFFIXES = (".pyc",)
@@ -77,7 +77,7 @@ STANDALONE = "standalone"
 def _log(message: str) -> None:
     # Same sink as the runtime's log: stdout is the journal (service
     # subprocess) or the Anki console (bootloader).
-    print(f"[ankiya] sync: {message}", flush=True)
+    print(f"[anki_theme] sync: {message}", flush=True)
 
 
 @dataclass(frozen=True)

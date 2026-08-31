@@ -1,7 +1,7 @@
-"""Make the bundled payload importable as the add-on would be (`ankiya.…`).
+"""Make the bundled payload importable as the add-on would be (`anki_theme.…`).
 
 payload/ mirrors the add-ons dir layout: inside Anki the payload tree is
-installed as `addons21/ankiya/`, so its modules import as `ankiya.palette`;
+installed as `addons21/anki_theme/`, so its modules import as `anki_theme.palette`;
 tests get the same view by putting payload/ on sys.path.
 """
 

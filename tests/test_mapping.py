@@ -7,7 +7,7 @@ Fixtures are the 22 stock Omarchy palettes, vendored from
 import re
 
 import pytest
-from ankiya.palette import (
+from anki_theme.palette import (
     VAR_NAMES,
     PaletteError,
     contrast_ratio,
@@ -61,7 +61,7 @@ def test_all_22_stock_themes_vendored() -> None:
 
 
 # The tier-1 tripwire itself (mapping ⊇ vendored snapshot) lives in
-# test_drift.py with the snapshot it now ships beside (payload/ankiya/).
+# test_drift.py with the snapshot it now ships beside (payload/anki_theme/).
 
 
 @pytest.mark.parametrize("theme", THEMES)
@@ -236,7 +236,7 @@ def test_fingerprint_tracks_palette_and_mode_changes() -> None:
 
 
 def test_load_raw_returns_mode_alongside_palette() -> None:
-    from ankiya.palette import load_raw
+    from anki_theme.palette import load_raw
 
     text = 'background = "#111111"\nmode = "dark"\nhyprland_border = "x"'
     palette, mode = load_raw(text)

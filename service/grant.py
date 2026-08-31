@@ -83,11 +83,11 @@ def main(argv: list[str]) -> int:
         return 2
     anki2_root, state_dir = Path(argv[0]), Path(argv[1])
     plugin_dir = Path(__file__).resolve().parent.parent
-    bundled = plugin_dir / "payload" / "ankiya"
+    bundled = plugin_dir / "payload" / "anki_theme"
     installed = anki2_root / ADDON_SEGMENT
 
     consent = record_consent(state_dir, read_plugin_version(plugin_dir))
-    print(f"[ankiya] grant: consent recorded at {consent}", file=sys.stderr)
+    print(f"[anki_theme] grant: consent recorded at {consent}", file=sys.stderr)
 
     try:
         proc = subprocess.run(
@@ -97,7 +97,7 @@ def main(argv: list[str]) -> int:
             timeout=SYNC_TIMEOUT_S,
         )
     except subprocess.TimeoutExpired:
-        print(f"[ankiya] grant: sync did not finish in {SYNC_TIMEOUT_S:.0f}s", file=sys.stderr)
+        print(f"[anki_theme] grant: sync did not finish in {SYNC_TIMEOUT_S:.0f}s", file=sys.stderr)
         return 1
     if proc.stderr:
         sys.stderr.write(proc.stderr)

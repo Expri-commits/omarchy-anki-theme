@@ -18,15 +18,15 @@ import threading
 from pathlib import Path
 
 import pytest
-from ankiya import sync
-from ankiya.sync import OLD_PREFIX, STAGE_PREFIX
+from anki_theme import sync
+from anki_theme.sync import OLD_PREFIX, STAGE_PREFIX
 
 REPO = Path(__file__).resolve().parent.parent
-REAL_PAYLOAD = REPO / "payload" / "ankiya"
+REAL_PAYLOAD = REPO / "payload" / "anki_theme"
 
 IDENTITY = {
     "schema": 1,
-    "product": "ankiya",
+    "product": "anki_theme",
     "pluginId": "io.github.expri-commits.anki-theme",
     "version": "0.1.0",
 }
@@ -35,7 +35,7 @@ IDENTITY = {
 # content-agnostic, so only the identity file's shape matters.
 V1_FILES = {
     "payload.json": json.dumps(IDENTITY, indent=2) + "\n",
-    "meta.json": '{"name": "Ankiya", "homepage": "https://example.com"}\n',
+    "meta.json": '{"name": "Anki Theme for Omarchy", "homepage": "https://example.com"}\n',
     "config.json": '{"contrast_clamp": true}\n',
     "__init__.py": "# v1\n",
     "runtime.py": "# v1\n",
@@ -72,7 +72,7 @@ def layout(tmp_path: Path) -> dict:
     state = tmp_path / "state"
     return {
         "bundled": bundled,
-        "installed": addons / "ankiya",
+        "installed": addons / "anki_theme",
         "addons": addons,
         "scratch": tmp_path / "Anki2",
         "state": state,
@@ -164,7 +164,7 @@ def test_swap_on_drift_carries_meta_ships_config_fresh(layout: dict):
     write_tree(
         layout["installed"],
         {
-            "meta.json": '{"name": "Ankiya", "config": {"contrast_clamp": false}}\n',
+            "meta.json": '{"name": "Anki Theme for Omarchy", "config": {"contrast_clamp": false}}\n',
             "config.json": '{"contrast_clamp": "corrupted"}\n',
         },
     )
@@ -281,11 +281,11 @@ def test_standalone_writes_nothing(layout: dict):
 
 
 def test_dev_symlink_is_refused_not_clobbered(layout: dict, tmp_path: Path):
-    """The dev-install loop links the repo payload in as `ankiya`; sync must
+    """The dev-install loop links the repo payload in as `anki_theme`; sync must
     refuse (no stamp through the link) without ever writing the working
     tree."""
     link_target = write_tree(tmp_path / "worktree", V1_FILES)
-    (layout["addons"] / "ankiya").symlink_to(link_target)
+    (layout["addons"] / "anki_theme").symlink_to(link_target)
     before = snapshot(link_target)
     result = run(layout)
     assert result.status == "refused"
@@ -300,7 +300,7 @@ def test_recovery_restores_dot_old_before_sweeping(layout: dict):
     then swept — never the reverse, or the user's meta.json dies with the
     dot-old and a fresh-defaults tree takes its place."""
     assert run(layout).status == "installed"
-    user_meta = '{"name": "Ankiya", "config": {"contrast_clamp": false}}\n'
+    user_meta = '{"name": "Anki Theme for Omarchy", "config": {"contrast_clamp": false}}\n'
     write_tree(layout["installed"], {"meta.json": user_meta})
     # Crash right between the two renames: installed moved to a dot-old,
     # the complete stage is still staged, and the bundle drifted further.
@@ -466,7 +466,7 @@ def test_bare_script_mode_needs_no_package_context(layout: dict):
     proc = subprocess.run(
         [
             sys.executable,
-            str(REPO / "payload/ankiya/sync.py"),
+            str(REPO / "payload/anki_theme/sync.py"),
             str(layout["bundled"]),
             str(layout["installed"]),
             str(layout["state"]),
@@ -486,13 +486,13 @@ def test_bare_script_mode_needs_no_package_context(layout: dict):
 
 
 def test_bootloader_resolves_the_bundled_payload(monkeypatch):
-    import ankiya
+    import anki_theme
 
-    monkeypatch.setenv(ankiya.BUNDLED_PAYLOAD_ENV, "/tmp/somewhere")
-    assert str(ankiya.bundled_payload_dir()) == "/tmp/somewhere"
-    monkeypatch.delenv(ankiya.BUNDLED_PAYLOAD_ENV, raising=False)
-    assert ankiya.PLUGIN_ID in str(ankiya.DEFAULT_BUNDLED_DIR)
-    assert "omarchy/plugins" in str(ankiya.bundled_payload_dir())
+    monkeypatch.setenv(anki_theme.BUNDLED_PAYLOAD_ENV, "/tmp/somewhere")
+    assert str(anki_theme.bundled_payload_dir()) == "/tmp/somewhere"
+    monkeypatch.delenv(anki_theme.BUNDLED_PAYLOAD_ENV, raising=False)
+    assert anki_theme.PLUGIN_ID in str(anki_theme.DEFAULT_BUNDLED_DIR)
+    assert "omarchy/plugins" in str(anki_theme.bundled_payload_dir())
 
 
 def test_real_payload_installs_and_goes_current(tmp_path: Path):
@@ -500,9 +500,9 @@ def test_real_payload_installs_and_goes_current(tmp_path: Path):
     shutil.copytree(REAL_PAYLOAD, bundled)  # incl. the repo's dev __pycache__
     addons = tmp_path / "Anki2" / "addons21"
     addons.mkdir(parents=True)
-    result = sync.ensure_current(bundled, addons / "ankiya", tmp_path / "state")
+    result = sync.ensure_current(bundled, addons / "anki_theme", tmp_path / "state")
     assert result.status == "installed"
     assert result.payload_hash == sync.tree_hash(REAL_PAYLOAD)
     # Dev bytecode from the repo tree never lands in an install.
-    assert not (addons / "ankiya" / "__pycache__").exists()
-    assert sync.ensure_current(bundled, addons / "ankiya", tmp_path / "state").status == "current"
+    assert not (addons / "anki_theme" / "__pycache__").exists()
+    assert sync.ensure_current(bundled, addons / "anki_theme", tmp_path / "state").status == "current"

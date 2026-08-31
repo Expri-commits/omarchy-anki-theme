@@ -22,7 +22,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from ankiya import sync
+from anki_theme import sync
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "service"))
@@ -30,7 +30,7 @@ import gate  # noqa: E402
 
 GATE_PY = REPO / "service" / "gate.py"
 GRANT_PY = REPO / "service" / "grant.py"
-BUNDLED = REPO / "payload" / "ankiya"
+BUNDLED = REPO / "payload" / "anki_theme"
 MANIFEST_VERSION = json.loads((REPO / "manifest.json").read_text())["version"]
 
 # The gate subprocess runs on the same interpreter the service would.
@@ -111,7 +111,7 @@ def test_unconsented_asks_before_anything_else():
     # machine that had consented): consent is the first question.
     decision = decided(consented=False)
     assert decision["action"] == gate.ASK_CONSENT
-    assert decision["toast"]["body"].find("addons21/ankiya") != -1
+    assert decision["toast"]["body"].find("addons21/anki_theme") != -1
 
 
 def test_consent_grant_missing_install_still_syncs():
@@ -129,7 +129,7 @@ def test_state_wiped_addon_present_syncs():
 def test_deleted_in_anki_offers_reinstall_never_resurrects():
     decision = decided(installed_exists=False)
     assert decision["action"] == gate.OFFER_REINSTALL
-    assert decision["toast"]["body"].find("addons21/ankiya") != -1
+    assert decision["toast"]["body"].find("addons21/anki_theme") != -1
     assert decision["exec"] == decided()["exec"]  # the click is plain Sync
 
 
@@ -152,7 +152,7 @@ def test_execs_are_complete_prod_shaped_argv():
         "-B",
         str(BUNDLED / "sync.py"),
         str(BUNDLED),
-        str(anki2 / "addons21" / "ankiya"),
+        str(anki2 / "addons21" / "anki_theme"),
         str(state),
     ]
 
@@ -235,7 +235,7 @@ def layout(tmp_path: Path) -> dict:
     return {
         "anki2": anki2,
         "addons": anki2 / "addons21",
-        "installed": anki2 / "addons21" / "ankiya",
+        "installed": anki2 / "addons21" / "anki_theme",
         "state": tmp_path / "state",
     }
 

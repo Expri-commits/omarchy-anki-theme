@@ -59,12 +59,12 @@ residuals ledger the gate is responsible for closing. Vocabulary per
 - **Var-inventory tripwire** (the dev-side half of
   [ticket 15](../.scratch/anki-theme/issues/15-anki-upgrade-var-churn-policy.md)'s
   drift policy — the same snapshot and diff routine ship in the add-on payload
-  as its runtime startup check: `ankiya/var_snapshot.txt` + `ankiya/drift.py`)
+  as its runtime startup check: `anki_theme/var_snapshot.txt` + `anki_theme/drift.py`)
   — a vendored snapshot of the installed Anki's `aqt.colors` names; tier 1
   asserts the mapping covers every name in the snapshot **and** that the live
   `aqt.colors` inventory still matches it. The Anki-upgrade regeneration move:
   run `/usr/bin/python scripts/regen_var_snapshot.py`, repair `VAR_RULES`
-  (`ankiya/palette.py`) for any retracted/added names it reports, re-run tier
+  (`anki_theme/palette.py`) for any retracted/added names it reports, re-run tier
   1, and ship via the normal payload propagation. Renamed/retracted vars fail
   here first.
 
@@ -75,7 +75,7 @@ commit gate by `addopts` — a CLI `-m` overrides). Any change under the payload
 tree (mapping, clamp, applier, sync, runtime), `Service.qml`, or `tests/gate/`
 itself. Minutes (~30 s after the Qt caches warm; the scratch base's first run
 builds them). One session: a dedicated scratch base (seeded via aqt's own
-`ProfileManager`, the dev-linked payload under `ANKIYA_BUNDLED_PAYLOAD` pinned
+`ProfileManager`, the dev-linked payload under `ANKI_THEME_BUNDLED_PAYLOAD` pinned
 to the same tree so the bootloader's sync check lands on "current"), the
 dev-only `zz_gate_control` add-on as control channel (command files in, JSON
 results out), window capture via grim after focus (the ticket-09 method;

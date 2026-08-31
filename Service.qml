@@ -33,7 +33,7 @@ Item {
     }
 
     function act(decision) {
-        console.log(`[ankiya] gate: ${decision.action} — ${decision.message}`);
+        console.log(`[anki_theme] gate: ${decision.action} — ${decision.message}`);
         // inert and idle fall through: the log line above is the whole action
         if (decision.action === "sync") {
             syncProc.command = decision.exec;
@@ -41,13 +41,13 @@ Item {
         } else if (decision.action === "ask_consent" || decision.action === "offer_reinstall") {
             // --exec must come last and carries the click action as argv
             // (Omarchy 4.0.1 contract — the gate already version-floored us).
-            toastProc.command = ["omarchy", "notification", "send", "--app-name", "Ankiya", decision.toast.headline, decision.toast.body, "--exec"].concat(decision.exec);
+            toastProc.command = ["omarchy", "notification", "send", "--app-name", "Anki Theme", decision.toast.headline, decision.toast.body, "--exec"].concat(decision.exec);
             toastProc.running = true;
         }
     }
 
     Component.onCompleted: {
-        console.log("[ankiya] service mounted");
+        console.log("[anki_theme] service mounted");
         gateProc.running = true;
     }
 
@@ -61,7 +61,7 @@ Item {
         command: ["/usr/bin/python", "-B", root.selfDir + "/service/gate.py", root.anki2Root, root.stateDir]
         onExited: (exitCode) => {
             if (exitCode !== 0)
-                console.warn(`[ankiya] gate: exited ${exitCode} — doing nothing`);
+                console.warn(`[anki_theme] gate: exited ${exitCode} — doing nothing`);
 
         }
 
@@ -70,13 +70,13 @@ Item {
                 try {
                     root.act(JSON.parse(this.text));
                 } catch (error) {
-                    console.warn(`[ankiya] gate: no decision parsed (${error})`);
+                    console.warn(`[anki_theme] gate: no decision parsed (${error})`);
                 }
             }
         }
 
         stderr: StdioCollector {
-            onStreamFinished: root.relay(this.text, "[ankiya] gate stderr: ", true)
+            onStreamFinished: root.relay(this.text, "[anki_theme] gate stderr: ", true)
         }
 
     }
@@ -86,16 +86,16 @@ Item {
 
         onExited: (exitCode) => {
             if (exitCode !== 0)
-                console.warn(`[ankiya] service sync: exited ${exitCode} — next start retries`);
+                console.warn(`[anki_theme] service sync: exited ${exitCode} — next start retries`);
 
         }
 
         stdout: StdioCollector {
-            onStreamFinished: root.relay(this.text, "[ankiya] service sync: ", false)
+            onStreamFinished: root.relay(this.text, "[anki_theme] service sync: ", false)
         }
 
         stderr: StdioCollector {
-            onStreamFinished: root.relay(this.text, "[ankiya] service sync log: ", false)
+            onStreamFinished: root.relay(this.text, "[anki_theme] service sync log: ", false)
         }
 
     }
@@ -105,16 +105,16 @@ Item {
 
         onExited: (exitCode) => {
             if (exitCode !== 0)
-                console.warn(`[ankiya] notification: exited ${exitCode} — not asked again this start`);
+                console.warn(`[anki_theme] notification: exited ${exitCode} — not asked again this start`);
 
         }
 
         stdout: StdioCollector {
-            onStreamFinished: root.relay(this.text, "[ankiya] notification: ", false)
+            onStreamFinished: root.relay(this.text, "[anki_theme] notification: ", false)
         }
 
         stderr: StdioCollector {
-            onStreamFinished: root.relay(this.text, "[ankiya] notification stderr: ", true)
+            onStreamFinished: root.relay(this.text, "[anki_theme] notification stderr: ", true)
         }
 
     }

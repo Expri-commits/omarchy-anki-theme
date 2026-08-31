@@ -28,14 +28,14 @@ import threading
 import time
 
 REPO = pathlib.Path(__file__).resolve().parent.parent.parent
-PAYLOAD = REPO / "payload" / "ankiya"
+PAYLOAD = REPO / "payload" / "anki_theme"
 GATE_DIR = REPO / "tests" / "gate"
 DATA_DIR = GATE_DIR / "data"
 ARTIFACTS = GATE_DIR / "artifacts"
 FIXTURE_THEMES = REPO / "tests" / "fixtures" / "themes"
 SYSTEM_THEMES = pathlib.Path("/usr/share/omarchy/themes")
 USER_THEMES = pathlib.Path.home() / ".config/omarchy/themes"
-GATE_THEME_PREFIX = "ankiya-gate-"
+GATE_THEME_PREFIX = "anki_theme-gate-"
 
 STATE_DIR = pathlib.Path.home() / ".local/state/omarchy/current"
 THEME_NAME_FILE = STATE_DIR / "theme.name"
@@ -172,7 +172,7 @@ class GateSession:
         # Dev-link the payload (the smoke pattern) and pin the bootloader's
         # bundled dir to the same tree, so the sync check lands on "current"
         # and never swaps the link out from under the run.
-        (addons / "ankiya").symlink_to(PAYLOAD)
+        (addons / "anki_theme").symlink_to(PAYLOAD)
         shutil.copytree(
             GATE_DIR / "gate_addon",
             addons / "zz_gate_control",
@@ -181,7 +181,7 @@ class GateSession:
         self.ctl.mkdir()
         env = dict(
             os.environ,
-            ANKIYA_BUNDLED_PAYLOAD=str(PAYLOAD),
+            ANKI_THEME_BUNDLED_PAYLOAD=str(PAYLOAD),
             GATE_CTL_DIR=str(self.ctl),
         )
         self._anki_log_handle = self.anki_log.open("w")

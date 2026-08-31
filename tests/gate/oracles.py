@@ -1,7 +1,7 @@
 """Palette-derived expectations: computed from the fixture, never remembered.
 
 Each surface's expected colors derive from the vendored stock palette through
-the locked mapping (ankiya.palette) — the oracle side of
+the locked mapping (anki_theme.palette) — the oracle side of
 docs/verification.md's "palette-derived oracles" principle. The aqt-side
 grounding (which element consumes which var) is locked in each oracle
 property's comment, verified against aqt 26.08.1's own CSS/QSS:
@@ -33,7 +33,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from ankiya.palette import Mapping, load_raw, map_palette
+from anki_theme.palette import Mapping, load_raw, map_palette
 
 REPO = Path(__file__).resolve().parent.parent.parent
 FIXTURES = REPO / "tests" / "fixtures" / "themes"

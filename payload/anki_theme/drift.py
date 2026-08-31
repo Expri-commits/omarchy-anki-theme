@@ -49,7 +49,7 @@ MARKER = "drift_seen.json"
 UNREADABLE_SIGNATURE = "<inventory-unreadable>"
 
 RESTORE_BUNDLED = "An Omarchy plugin update will restore them."
-RESTORE_STANDALONE = "Reinstalling Ankiya will restore them."
+RESTORE_STANDALONE = "Reinstalling Anki Theme will restore them."
 
 # Tooltips wrap in a small label; a mass refactor's name list stays readable.
 TOOLTIP_NAME_CAP = 5
@@ -57,7 +57,7 @@ TOOLTIP_NAME_CAP = 5
 
 def _log(message: str) -> None:
     # Same sink as every payload module's own; none imports another to log.
-    print(f"[ankiya] drift: {message}", flush=True)
+    print(f"[anki_theme] drift: {message}", flush=True)
 
 
 # -- the snapshot --------------------------------------------------------------
@@ -157,15 +157,15 @@ class Drift:
         restore = RESTORE_BUNDLED if bundled else RESTORE_STANDALONE
         if self.inventory_unreadable:
             return (
-                "Ankiya: this Anki update changed how its color variables are "
-                f"defined, so Ankiya can't tell what it still covers. {restore}"
+                "Anki Theme: this Anki update changed how its color variables are "
+                f"defined, so Anki Theme can't tell what it still covers. {restore}"
             )
         names = ", ".join(self.retracted[:TOOLTIP_NAME_CAP])
         if len(self.retracted) > TOOLTIP_NAME_CAP:
             names += ", …"
         plural = "s" if len(self.retracted) > 1 else ""
         return (
-            f"Ankiya: this Anki update renamed or removed {len(self.retracted)} "
+            f"Anki Theme: this Anki update renamed or removed {len(self.retracted)} "
             f"color variable{plural} it themes ({names}); affected elements keep "
             f"Anki's own colors for now. {restore}"
         )

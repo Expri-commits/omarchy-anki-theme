@@ -3,7 +3,7 @@
 
 Not collected by pytest — it drives the real GUI stack end to end. Launches
 Anki on a throwaway base with the payload tree dev-linked as
-``addons21/ankiya``, flips the LIVE Omarchy theme once via ``omarchy theme
+``addons21/anki_theme``, flips the LIVE Omarchy theme once via ``omarchy theme
 set`` (the shared omarchy-theme-set path behind the menu, CLI, and scheduler
 alike — ticket 09 proved all three perform the same state-dir mutation the
 watcher observes), then asserts on the applied record the add-on writes:
@@ -31,9 +31,9 @@ import time
 import tomllib
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
-PAYLOAD = REPO / "payload" / "ankiya"
+PAYLOAD = REPO / "payload" / "anki_theme"
 sys.path.insert(0, str(REPO / "payload"))
-from ankiya.palette import VAR_RULES  # noqa: E402
+from anki_theme.palette import VAR_RULES  # noqa: E402
 
 STATE_DIR = pathlib.Path.home() / ".local/state/omarchy/current"
 THEME_NAME_FILE = STATE_DIR / "theme.name"
@@ -142,12 +142,12 @@ def main() -> int:
     target_dir = to_dir_name(target)
     print(f"current={original!r} target={target!r} ({theme_mode(target_dir)})")
 
-    scratch = pathlib.Path(tempfile.mkdtemp(prefix="ankiya-smoke-"))
+    scratch = pathlib.Path(tempfile.mkdtemp(prefix="anki_theme-smoke-"))
     base = scratch / "base"
     base.mkdir()
     seed_base(base)
     (base / "addons21").mkdir()
-    (base / "addons21" / "ankiya").symlink_to(PAYLOAD)
+    (base / "addons21" / "anki_theme").symlink_to(PAYLOAD)
     anki_log = scratch / "anki.log"
 
     t_launch = time.time()
@@ -219,7 +219,7 @@ def main() -> int:
         # palette: the regenerated stdHtml CSS (served per page build) and the
         # engine-script refresh (sveltekit) both derive from this string.
         # Pixel-level rendering proof is tier 2's job (docs/verification.md).
-        delivered_css = (PAYLOAD / "web" / "ankiya.css").read_text()
+        delivered_css = (PAYLOAD / "web" / "anki_theme.css").read_text()
         target_bg = theme_colors(target_dir)["background"].lower()
         check(
             f"--canvas: {target_bg};" in delivered_css,

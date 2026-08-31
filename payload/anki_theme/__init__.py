@@ -1,4 +1,4 @@
-"""Ankiya — Anki recolored live in the active Omarchy palette.
+"""Anki Theme for Omarchy — Anki recolored live in the active Omarchy palette.
 
 Add-on entry as a bootloader (tickets 12/19): the sync check runs before
 anything else imports, so a payload update that lands mid-startup bounds the
@@ -29,8 +29,8 @@ import traceback
 PLUGIN_ID = "io.github.expri-commits.anki-theme"
 # Dev-loop / smoke override for the bundled-payload location; unset in
 # production, where the marketplace install is the source.
-BUNDLED_PAYLOAD_ENV = "ANKIYA_BUNDLED_PAYLOAD"
-DEFAULT_BUNDLED_DIR = pathlib.Path.home() / ".config/omarchy/plugins" / PLUGIN_ID / "payload/ankiya"
+BUNDLED_PAYLOAD_ENV = "ANKI_THEME_BUNDLED_PAYLOAD"
+DEFAULT_BUNDLED_DIR = pathlib.Path.home() / ".config/omarchy/plugins" / PLUGIN_ID / "payload/anki_theme"
 
 
 def bundled_payload_dir() -> pathlib.Path:
@@ -41,11 +41,11 @@ def bundled_payload_dir() -> pathlib.Path:
 def _log(message: str) -> None:
     # Same one-line sink as sync's and runtime's; each module owns its own so
     # none ever imports another just to log (the standalone-module rule).
-    print(f"[ankiya] {message}", flush=True)
+    print(f"[anki_theme] {message}", flush=True)
 
 
 def _boot() -> None:
-    from ankiya import sync  # imported before runtime: the swap must land first
+    from anki_theme import sync  # imported before runtime: the swap must land first
 
     try:
         result = sync.ensure_current(
@@ -69,6 +69,6 @@ if "aqt" in sys.modules:  # inside Anki; tier-1 pytest imports stop here
 
     _boot()
 
-    from ankiya.runtime import runtime  # must follow the swap: one-hop bound
+    from anki_theme.runtime import runtime  # must follow the swap: one-hop bound
 
     gui_hooks.profile_did_open.append(runtime.start)

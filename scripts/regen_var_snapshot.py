@@ -3,11 +3,11 @@
 
 The Anki-upgrade move from wayfinder tickets 15/21 (documented in
 docs/verification.md, tier 1): run this on every Anki version bump, then
-repair the mapping (``VAR_RULES`` in ``ankiya/palette.py``) for any
+repair the mapping (``VAR_RULES`` in ``anki_theme/palette.py``) for any
 retracted/added names it reports and re-run tier 1 — the tripwire test
 fails first if the mapping lags the new inventory.
 
-Must import ``ankiya.drift`` before ``aqt``: importing the package runs the
+Must import ``anki_theme.drift`` before ``aqt``: importing the package runs the
 bootloader, which is inert unless ``aqt`` is already in ``sys.modules``.
 """
 
@@ -16,7 +16,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "payload"))
 
-from ankiya.drift import (  # noqa: E402
+from anki_theme.drift import (  # noqa: E402
     SNAPSHOT_FILE,
     diff_inventory,
     gather_inventory,

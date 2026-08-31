@@ -15,9 +15,9 @@ from __future__ import annotations
 
 import json
 
-from ankiya.palette import Mapping
+from anki_theme.palette import Mapping
 
-STYLE_ID = "ankiya-style"
+STYLE_ID = "anki_theme-style"
 
 
 def to_css_var(aqt_name: str) -> str:

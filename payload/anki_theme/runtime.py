@@ -9,7 +9,7 @@ on this exact Anki build) onto the pure core from ticket 16. Delivery legs:
                are called directly because the public ``apply_style()``
                early-returns when polarity didn't change — same-polarity
                dark→dark switches must recolor too.
-  stdHtml      ``web/ankiya.css`` regenerated in the add-on dir, read fresh
+  stdHtml      ``web/anki_theme.css`` regenerated in the add-on dir, read fresh
                from disk by every page build (``webview_will_set_content`` +
                ``setWebExports``).
   sveltekit    a profile-level QWebEngineScript — sveltekit pages never fire
@@ -67,15 +67,15 @@ from aqt.theme import theme_manager
 from aqt.utils import tooltip
 from aqt.webview import AnkiWebView
 
-from ankiya import bundled_payload_dir
-from ankiya.cssgen import css_text, engine_script
-from ankiya.drift import SNAPSHOT_FILE, run_check
-from ankiya.palette import Mapping, fingerprint, load_raw
-from ankiya.theme_clamp import Adjustment, map_with_clamp
+from anki_theme import bundled_payload_dir
+from anki_theme.cssgen import css_text, engine_script
+from anki_theme.drift import SNAPSHOT_FILE, run_check
+from anki_theme.palette import Mapping, fingerprint, load_raw
+from anki_theme.theme_clamp import Adjustment, map_with_clamp
 
 # Folder identity locked by ticket 11; the add-on is installed as
-# addons21/ankiya, so module name, folder, and web-export key all coincide.
-ADDON_PACKAGE = "ankiya"
+# addons21/anki_theme, so module name, folder, and web-export key all coincide.
+ADDON_PACKAGE = "anki_theme"
 
 STATE_DIR = pathlib.Path.home() / ".local/state/omarchy/current"
 PALETTE_FILE = STATE_DIR / "theme" / "colors.toml"
@@ -84,8 +84,8 @@ PLUGIN_STATE_DIR = pathlib.Path.home() / ".local/state/omarchy/anki-theme"
 APPLIED_LOG = PLUGIN_STATE_DIR / "applied.jsonl"
 
 WEB_DIR = pathlib.Path(__file__).parent / "web"
-CSS_FILE = WEB_DIR / "ankiya.css"
-ENGINE_SCRIPT_NAME = "ankiya_style"
+CSS_FILE = WEB_DIR / "anki_theme.css"
+ENGINE_SCRIPT_NAME = "anki_theme_style"
 
 DEBOUNCE_MS = 150
 RETRY_MS = 200
@@ -96,7 +96,7 @@ REVIEW_TOOLBAR_COPY_MS = 300
 
 
 def _log(message: str) -> None:
-    print(f"[ankiya] {message}", flush=True)
+    print(f"[anki_theme] {message}", flush=True)
 
 
 class Runtime:
@@ -448,7 +448,7 @@ class Runtime:
         # completed apply, stdHtml page builds render Anki's own theming —
         # the stale on-disk CSS from a previous session must not reach them.
         if self._applied_once:
-            web_content.css.append(f"/_addons/{ADDON_PACKAGE}/web/ankiya.css")
+            web_content.css.append(f"/_addons/{ADDON_PACKAGE}/web/anki_theme.css")
 
     # -- the watcher ---------------------------------------------------------
 

@@ -67,8 +67,8 @@ def main() -> int:
     out.mkdir(exist_ok=True)
 
     themes = parse_shots(run)
-    stock = [t for t in themes if not t.startswith("ankiya-gate-")]
-    pathological = [t for t in themes if t.startswith("ankiya-gate-")]
+    stock = [t for t in themes if not t.startswith("anki_theme-gate-")]
+    pathological = [t for t in themes if t.startswith("anki_theme-gate-")]
 
     sections: list[tuple[str, list[tuple[str, Path]]]] = []
     for theme in stock:
@@ -107,7 +107,7 @@ def main() -> int:
                 f"<figcaption>{html.escape(label)}</figcaption></figure>"
             )
     (out / "index.html").write_text(
-        "<!doctype html><meta charset='utf-8'><title>Ankiya gate gallery</title>"
+        "<!doctype html><meta charset='utf-8'><title>Anki Theme gate gallery</title>"
         "<style>body{background:#222;color:#ddd;font-family:sans-serif;max-width:2000px;"
         "margin:auto}figure{display:inline-block;margin:8px}img{max-width:100%;"
         "outline:1px solid #555}figcaption{font-size:13px;padding:4px}</style>" + "\n".join(rows)
