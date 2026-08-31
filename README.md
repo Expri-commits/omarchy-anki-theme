@@ -4,8 +4,6 @@ Anki recolored live in whatever Omarchy theme is active. Switch themes from the
 menu, the CLI, or a scheduler and a running Anki follows: deck browser,
 reviewer, editor, stats, dialogs, menus, tables. No restart.
 
-![Anki following an Omarchy theme switch](preview.png)
-
 https://github.com/user-attachments/assets/029fc080-28ee-490b-8d8e-955f56667da2
 
 All 22 stock Omarchy themes work, and so do user-made ones: colors are read
