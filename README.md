@@ -6,11 +6,7 @@ Anki, decked out in whatever Omarchy theme is active — live, full surface, no 
 suffix *-ya* (屋). Theming today; the shop stays open for whatever else Anki
 needs from Omarchy.
 
-<!-- flip-time: re-shoot both screenshot pairs with the shipped plugin, drop
-     preview.png at the repo root, and uncomment every flip-time: block in this
-     file (wayfinder ticket 10, decision 5) — see the flip checklist on the ticket.
 ![Anki following an Omarchy theme switch](preview.png)
--->
 
 Every Omarchy theme switch — from the menu, the CLI, or a theme scheduler — recolors
 all of Anki: deck browser, reviewer, editor, stats, dialogs, menus, tables. Switch
@@ -33,14 +29,10 @@ from Catppuccin Latte to Gruvbox and a running Anki follows along instantly.
 - **No network, no third-party dependencies.** Stdlib-only Python inside Anki,
   QML/JS in the shell. MIT licensed.
 
-<!-- flip-time: re-shot screenshots land here — uncomment this whole block
-     (heading included) once the images exist. The polarity-flip pair doubles
-     as the marketplace preview.png (wayfinder ticket 10, decision 5).
 ## Screenshots
 
 ![Deck browser before and after a light→dark theme switch](docs/img/polarity-flip.png)
 ![Even a dark→dark switch recolors live](docs/img/same-polarity.png)
--->
 
 ## How it works
 
