@@ -183,7 +183,9 @@ def test_propagation_drift_converges_at_boot(gate3_down, leg_home):
     result = sync.ensure_current(bundled_v1, installed, state)
     assert result.status == sync.INSTALLED, f"install leg: {result}"
     meta = installed / "meta.json"
-    meta.write_text(json.dumps({"name": "Anki Theme for Omarchy", "config": {"contrast_clamp": True}}))
+    meta.write_text(
+        json.dumps({"name": "Anki Theme for Omarchy", "config": {"contrast_clamp": True}})
+    )
 
     bundled_v2 = make_bundled(scratch, "anki_theme-v2")
     anki_log = scratch / "anki.log"

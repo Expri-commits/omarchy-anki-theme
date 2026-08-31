@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "author": "Expri",
   "license": "MIT",
-  "description": "Recolor Anki live in the active Omarchy palette — deck browser, reviewer, editor, and dialogs follow every theme switch, no restart.",
+  "description": "Recolor Anki live in the active Omarchy palette: deck browser, reviewer, editor, and dialogs follow every theme switch, no restart.",
   "kinds": ["service"],
   "entryPoints": {
     "service": "Service.qml"

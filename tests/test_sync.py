@@ -164,7 +164,9 @@ def test_swap_on_drift_carries_meta_ships_config_fresh(layout: dict):
     write_tree(
         layout["installed"],
         {
-            "meta.json": '{"name": "Anki Theme for Omarchy", "config": {"contrast_clamp": false}}\n',
+            "meta.json": (
+                '{"name": "Anki Theme for Omarchy", "config": {"contrast_clamp": false}}\n'
+            ),
             "config.json": '{"contrast_clamp": "corrupted"}\n',
         },
     )
@@ -505,4 +507,7 @@ def test_real_payload_installs_and_goes_current(tmp_path: Path):
     assert result.payload_hash == sync.tree_hash(REAL_PAYLOAD)
     # Dev bytecode from the repo tree never lands in an install.
     assert not (addons / "anki_theme" / "__pycache__").exists()
-    assert sync.ensure_current(bundled, addons / "anki_theme", tmp_path / "state").status == "current"
+    assert (
+        sync.ensure_current(bundled, addons / "anki_theme", tmp_path / "state").status
+        == "current"
+    )

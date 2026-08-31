@@ -30,7 +30,9 @@ PLUGIN_ID = "io.github.expri-commits.anki-theme"
 # Dev-loop / smoke override for the bundled-payload location; unset in
 # production, where the marketplace install is the source.
 BUNDLED_PAYLOAD_ENV = "ANKI_THEME_BUNDLED_PAYLOAD"
-DEFAULT_BUNDLED_DIR = pathlib.Path.home() / ".config/omarchy/plugins" / PLUGIN_ID / "payload/anki_theme"
+DEFAULT_BUNDLED_DIR = (
+    pathlib.Path.home() / ".config/omarchy/plugins" / PLUGIN_ID / "payload/anki_theme"
+)
 
 
 def bundled_payload_dir() -> pathlib.Path:
