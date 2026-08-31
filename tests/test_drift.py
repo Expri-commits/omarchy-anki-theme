@@ -202,6 +202,23 @@ def test_marker_with_mangled_entries_fails_open(tmp_path: Path) -> None:
     assert seen_signatures(tmp_path) == {"STATE_NEW"}
 
 
+def test_record_signature_replaces_a_planted_marker_link_not_its_target(
+    tmp_path: Path,
+) -> None:
+    """The marker write is no-follow end to end: a pre-planted symlink at the
+    marker path gets replaced wholesale by mkstemp+os.replace, and its target
+    is never truncated."""
+    victim = tmp_path / "victim.json"
+    victim.write_text('{"keep": true}\n')
+    (tmp_path / MARKER).symlink_to(victim)
+    record_signature(tmp_path, "A")
+    assert json.loads((tmp_path / MARKER).read_text()) == {"signatures": ["A"]}
+    assert not (tmp_path / MARKER).is_symlink()
+    assert json.loads(victim.read_text()) == {"keep": True}
+    # The pid-suffixed tmp the old code used is gone: no temp litter either.
+    assert {p.name for p in tmp_path.iterdir()} == {MARKER, "victim.json"}
+
+
 # -- the one startup check ----------------------------------------------------------
 
 

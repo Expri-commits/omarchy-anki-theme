@@ -470,7 +470,10 @@ class GateSession:
             ).stdout
             try:
                 focused = json.loads(active)["address"] == client["address"]
-            except ValueError, KeyError:
+            except (
+                ValueError,
+                KeyError,
+            ):
                 focused = False
             if focused:
                 break

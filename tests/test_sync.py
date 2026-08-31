@@ -9,6 +9,7 @@ proven stampable end to end.
 """
 
 import errno
+import hashlib
 import json
 import os
 import shutil
@@ -351,6 +352,99 @@ def test_incomplete_stage_is_swept_not_landed(layout: dict):
     assert (layout["installed"] / "__init__.py").read_text() == "# v1\n"
 
 
+# -- recovery verifies what it recovers ---------------------------------------
+
+
+@pytest.mark.parametrize(
+    "stamp",
+    [
+        None,  # no payload.json at all
+        {"product": "other", "payloadHash": "0" * 64},  # foreign product
+        {"product": "anki_theme", "payloadHash": None},  # non-string hash
+        {"schema": 99, "product": "anki_theme", "payloadHash": "0" * 64},  # foreign schema
+    ],
+    ids=["no-stamp", "foreign-product", "non-string-hash", "unknown-schema"],
+)
+def test_planted_unverified_dot_old_is_swept_not_restored(layout: dict, stamp):
+    """A real dot-old is a former installed dir, which always carried a stamp;
+    an unstampable 'dot-old' is plantable debris, and renaming it into place
+    would hand its code to Anki at next start. Unverified plants stay for the
+    sweep: no add-on until the next sync reinstalls, never stranger bytes."""
+    planted = layout["scratch"] / DEAD_OLD
+    files = {k: v for k, v in V1_FILES.items() if k != "payload.json"}
+    files["__init__.py"] = "# planted\n"
+    if stamp is not None:
+        files["payload.json"] = json.dumps(stamp) + "\n"
+    write_tree(planted, files)
+
+    assert run(layout).status == "installed"  # fresh from the bundle, not the plant
+    assert (layout["installed"] / "__init__.py").read_text() == "# v1\n"
+    assert scratch_names(layout) == []
+
+
+def test_planted_forged_stamp_stage_is_swept_not_landed(layout: dict):
+    """A stage stamp is only a claim; landing requires the bytes to hash back
+    to the bundled payload. This plant claims the current bundled hash but
+    carries different bytes — exactly what the old product-name-only check
+    landed."""
+    forged = {**IDENTITY, "payloadHash": sync.tree_hash(layout["bundled"])}
+    write_tree(
+        layout["scratch"] / DEAD_STAGE,
+        {
+            **V1_FILES,
+            "__init__.py": "# planted\n",
+            "payload.json": json.dumps(forged, indent=2) + "\n",
+        },
+    )
+
+    assert run(layout).status == "installed"
+    assert (layout["installed"] / "__init__.py").read_text() == "# v1\n"
+    assert scratch_names(layout) == []
+
+
+def test_standalone_never_lands_a_stage(layout: dict):
+    """No bundle, nothing landable: a stage's stamp is planter-controlled
+    bytes, so there is nothing to verify it against — a fully-formed forged
+    stage sweeps like any other plant, and the add-on stays absent until a
+    reinstall (fail toward no add-on, never toward planted code)."""
+    assert run(layout).status == "installed"
+    shutil.rmtree(layout["bundled"])
+    layout["bundled"] = layout["scratch"].parent / "gone"
+    shutil.rmtree(layout["installed"])
+    forged = {**IDENTITY, "payloadHash": "0" * 64}
+    write_tree(
+        layout["scratch"] / DEAD_STAGE,
+        {
+            **V1_FILES,
+            "__init__.py": "# planted\n",
+            "payload.json": json.dumps(forged, indent=2) + "\n",
+        },
+    )
+
+    assert run(layout).status == "standalone"
+    assert not layout["installed"].exists()
+    assert scratch_names(layout) == []
+
+
+def test_planted_empty_digest_stage_is_swept_standalone(layout: dict):
+    """The sharpest standalone plant: a stage of nothing but a payload.json
+    claiming the empty-tree digest. With the bundle absent, every hash
+    comparison here collapses to sha256(b"") — only the bundle carrying its
+    own identity stops this from landing (review W1, reproduced)."""
+    assert run(layout).status == "installed"
+    shutil.rmtree(layout["bundled"])
+    layout["bundled"] = layout["scratch"].parent / "gone"
+    shutil.rmtree(layout["installed"])
+    empty = {**IDENTITY, "payloadHash": hashlib.sha256(b"").hexdigest()}
+    stage = layout["scratch"] / DEAD_STAGE
+    stage.mkdir()
+    (stage / "payload.json").write_text(json.dumps(empty, indent=2) + "\n")
+
+    assert run(layout).status == "standalone"
+    assert not layout["installed"].exists()
+    assert scratch_names(layout) == []
+
+
 def test_meta_json_salvage_from_a_leftover_old(layout: dict):
     assert run(layout).status == "installed"
     # The swap died after landing but before the carry: the landed tree has
@@ -360,6 +454,85 @@ def test_meta_json_salvage_from_a_leftover_old(layout: dict):
     write_tree(layout["scratch"] / DEAD_OLD, {"meta.json": user_meta})
     assert run(layout).status == "current"  # nothing else to do…
     assert (layout["installed"] / "meta.json").read_text() == user_meta
+    assert scratch_names(layout) == []
+
+
+# -- meta.json is carried no-follow --------------------------------------------
+
+
+def test_carry_skips_a_planted_meta_symlink(layout: dict, tmp_path: Path):
+    """``is_file()`` follows links: a planted meta.json symlink in the
+    installed tree would duplicate — or disk-fill with — its target's content
+    into the freshly built stage. The carry gates on the link, so the swap
+    ships the bundle's meta and the target is never read."""
+    assert run(layout).status == "installed"
+    secret = tmp_path / "outside-the-tree.txt"
+    secret.write_text("do not copy\n")
+    (layout["installed"] / "meta.json").unlink()
+    (layout["installed"] / "meta.json").symlink_to(secret)
+    seed_drift(layout)
+
+    assert run(layout).status == "swapped"
+    meta = json.loads((layout["installed"] / "meta.json").read_text())
+    assert meta["name"] == "Anki Theme for Omarchy"  # the bundle's, not the link's
+    assert secret.read_text() == "do not copy\n"
+
+
+def test_salvage_skips_a_planted_symlink_in_the_dot_old(layout: dict, tmp_path: Path):
+    assert run(layout).status == "installed"
+    secret = tmp_path / "outside-the-tree.txt"
+    secret.write_text("do not copy\n")
+    (layout["installed"] / "meta.json").unlink()
+    old = layout["scratch"] / DEAD_OLD
+    old.mkdir()
+    (old / "meta.json").symlink_to(secret)
+
+    assert run(layout).status == "current"
+    # The planted link is skipped, its target never read, and the sweep takes
+    # the dot-old (link included) with it.
+    assert not (layout["installed"] / "meta.json").exists()
+    assert secret.read_text() == "do not copy\n"
+    assert scratch_names(layout) == []
+
+
+def test_salvage_replaces_a_dangling_meta_link_not_its_target(layout: dict):
+    """A dangling meta.json link at the destination is the write-through hole:
+    exists() follows the link and finds nothing, so salvage runs — and copy2
+    must replace the link itself, never create the file at the attacker's
+    target path."""
+    assert run(layout).status == "installed"
+    user_meta = '{"config": {"contrast_clamp": false}}\n'
+    (layout["installed"] / "meta.json").unlink()
+    planted = layout["scratch"] / "attacker-chosen.json"
+    (layout["installed"] / "meta.json").symlink_to(planted)  # dangling
+    write_tree(layout["scratch"] / DEAD_OLD, {"meta.json": user_meta})
+
+    assert run(layout).status == "current"
+    assert (layout["installed"] / "meta.json").read_text() == user_meta
+    assert not (layout["installed"] / "meta.json").is_symlink()
+    assert not planted.exists()
+    assert scratch_names(layout) == []
+
+
+def test_salvage_is_abandoned_when_the_link_cannot_be_cleared(layout: dict, monkeypatch):
+    """A same-uid race can swap the planted link for a directory between
+    is_symlink() and unlink() — the unlink then fails, and the salvage must
+    be abandoned (logged), never copy through a path we failed to clear."""
+    assert run(layout).status == "installed"
+    (layout["installed"] / "meta.json").unlink()
+    (layout["installed"] / "meta.json").symlink_to(layout["scratch"] / "dangling")
+    write_tree(layout["scratch"] / DEAD_OLD, {"meta.json": '{"config": {}}\n'})
+
+    real_unlink = Path.unlink
+
+    def racing_unlink(self: Path, *args: object, **kwargs: object) -> None:
+        if self.name == "meta.json" and self.parent == layout["installed"]:
+            raise OSError("swapped for a directory mid-race")
+        real_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", racing_unlink)
+    assert run(layout).status == "current"
+    assert not (layout["installed"] / "meta.json").exists()
     assert scratch_names(layout) == []
 
 
@@ -458,6 +631,45 @@ def test_concurrent_syncs_converge(layout: dict):
     assert scratch_names(layout) == []
 
 
+# -- atomic writes ------------------------------------------------------------
+
+
+def test_atomic_write_text_lands_content_and_leaves_no_temp(tmp_path: Path):
+    target = tmp_path / "marker.json"
+    sync.atomic_write_text(target, '{"a": 1}\n')
+    assert target.read_text() == '{"a": 1}\n'
+    assert [p.name for p in tmp_path.iterdir()] == ["marker.json"]
+
+
+def test_atomic_write_text_replaces_a_planted_symlink_not_its_target(tmp_path: Path):
+    """The predictable tmp names this helper replaces were plantable: a
+    same-uid attacker pre-creates the tmp path as a symlink and write_text's
+    truncate writes straight through it. A mkstemp name cannot pre-exist,
+    and the closing replace swaps the link at the destination out wholesale."""
+    victim = tmp_path / "victim.txt"
+    victim.write_text("untouched\n")
+    target = tmp_path / "marker.json"
+    target.symlink_to(victim)
+    sync.atomic_write_text(target, "fresh\n")
+    assert target.read_text() == "fresh\n" and not target.is_symlink()
+    assert victim.read_text() == "untouched\n"
+
+
+def test_atomic_write_text_unlinks_its_temp_when_the_write_fails(tmp_path: Path, monkeypatch):
+    target = tmp_path / "marker.json"
+    target.write_text("old\n")
+
+    def exploding_replace(*args: object) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(os, "replace", exploding_replace)
+    with pytest.raises(OSError, match="disk full"):
+        sync.atomic_write_text(target, "fresh\n")
+    assert target.read_text() == "old\n"
+    # A failed write never litters the directory with its temp.
+    assert [p.name for p in tmp_path.iterdir()] == ["marker.json"]
+
+
 # -- the two drivers ---------------------------------------------------------
 
 
@@ -508,6 +720,5 @@ def test_real_payload_installs_and_goes_current(tmp_path: Path):
     # Dev bytecode from the repo tree never lands in an install.
     assert not (addons / "anki_theme" / "__pycache__").exists()
     assert (
-        sync.ensure_current(bundled, addons / "anki_theme", tmp_path / "state").status
-        == "current"
+        sync.ensure_current(bundled, addons / "anki_theme", tmp_path / "state").status == "current"
     )

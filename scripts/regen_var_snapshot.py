@@ -44,7 +44,10 @@ def main() -> int:
         return 1
     try:
         old = load_snapshot(SNAPSHOT_FILE)
-    except OSError, ValueError:
+    except (
+        OSError,
+        ValueError,
+    ):
         old = frozenset()
     body = HEADER.format(version=version) + "".join(f"{name}\n" for name in sorted(live))
     SNAPSHOT_FILE.write_text(body)

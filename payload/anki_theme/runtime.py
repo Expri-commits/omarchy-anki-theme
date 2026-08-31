@@ -71,6 +71,7 @@ from anki_theme import bundled_payload_dir
 from anki_theme.cssgen import css_text, engine_script
 from anki_theme.drift import SNAPSHOT_FILE, run_check
 from anki_theme.palette import Mapping, fingerprint, load_raw
+from anki_theme.sync import atomic_write_text
 from anki_theme.theme_clamp import Adjustment, map_with_clamp
 
 # Folder identity locked by ticket 11; the add-on is installed as
@@ -327,9 +328,9 @@ class Runtime:
 
     def _write_web_css(self, css: str) -> None:
         WEB_DIR.mkdir(exist_ok=True)
-        tmp = CSS_FILE.with_suffix(".tmp")
-        tmp.write_text(css)
-        tmp.replace(CSS_FILE)
+        # mkstemp+replace: the fixed `web/anki_theme.tmp` this once used was
+        # plantable as a symlink write_text would truncate straight through.
+        atomic_write_text(CSS_FILE, css)
 
     # -- engine scripts (sveltekit pages) ------------------------------------
 

@@ -24,7 +24,8 @@ module never writes anywhere outside the plugin state dir. The tooltip copy
 is mode-aware — bundled says a plugin update restores coverage, standalone
 says a reinstall restores it.
 
-Pure and stdlib-only so tier-1 pytest reaches everything: the one live
+Pure so tier-1 pytest reaches everything (the one cross-module import,
+sync's atomic-write helper, is itself stdlib-only): the one live
 thing ``run_check`` touches is passed in (the module to introspect, the
 log/tooltip callables, the state dir).
 """
@@ -32,12 +33,13 @@ log/tooltip callables, the state dir).
 from __future__ import annotations
 
 import json
-import os
 import traceback
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from anki_theme.sync import atomic_write_text
 
 # Ships in the payload so the baseline rides ticket 12's propagation: a
 # repaired mapping arrives with its own regenerated snapshot.
@@ -190,7 +192,12 @@ def seen_signatures(state_dir: Path) -> set[str]:
     (the next record replaces whatever was broken)."""
     try:
         marker = json.loads((Path(state_dir) / MARKER).read_text())
-    except OSError, ValueError:
+    # The trailing comma pins the <=3.13-compatible parens: ruff's py314
+    # formatter would otherwise emit PEP 758's bare, 3.14-only form.
+    except (
+        OSError,
+        ValueError,
+    ):
         return set()
     signatures = marker.get("signatures") if isinstance(marker, dict) else None
     # Str-only: a hand-mangled marker must fail open to "unseen", not raise
@@ -208,10 +215,10 @@ def record_signature(state_dir: Path, signature: str) -> None:
         signatures = seen_signatures(state_dir)
         signatures.add(signature)
         state_dir.mkdir(parents=True, exist_ok=True)
-        marker = state_dir / MARKER
-        tmp = marker.with_name(f".{marker.name}.{os.getpid()}.tmp")
-        tmp.write_text(json.dumps({"signatures": sorted(signatures)}, indent=2) + "\n")
-        tmp.replace(marker)
+        atomic_write_text(
+            state_dir / MARKER,
+            json.dumps({"signatures": sorted(signatures)}, indent=2) + "\n",
+        )
     except OSError:
         _log(f"could not record drift signature in {state_dir}")
 

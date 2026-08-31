@@ -141,7 +141,10 @@ def first_frame_timestamp(path: Path) -> float | None:
         return None
     try:
         return int(lines[1].split()[1]) / 1_000_000
-    except IndexError, ValueError:
+    except (
+        IndexError,
+        ValueError,
+    ):
         return None
 
 

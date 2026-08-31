@@ -125,7 +125,12 @@ def read_consent(state_dir: Path) -> bool:
     """
     try:
         consent = json.loads((state_dir / CONSENT_FILE).read_text())
-    except OSError, ValueError:
+    # The trailing comma pins the <=3.13-compatible parens: ruff's py314
+    # formatter would otherwise emit PEP 758's bare, 3.14-only form.
+    except (
+        OSError,
+        ValueError,
+    ):
         return False
     return isinstance(consent, dict) and consent.get("granted") is True
 

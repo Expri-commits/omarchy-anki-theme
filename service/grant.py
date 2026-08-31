@@ -66,7 +66,12 @@ def read_plugin_version(plugin_dir: Path) -> str:
     """The manifest's version — best-effort; "unknown" never blocks a grant."""
     try:
         manifest = json.loads((plugin_dir / "manifest.json").read_text())
-    except OSError, ValueError:
+    # The trailing comma pins the <=3.13-compatible parens: ruff's py314
+    # formatter would otherwise emit PEP 758's bare, 3.14-only form.
+    except (
+        OSError,
+        ValueError,
+    ):
         return "unknown"
     version = manifest.get("version") if isinstance(manifest, dict) else None
     return version if isinstance(version, str) and version else "unknown"

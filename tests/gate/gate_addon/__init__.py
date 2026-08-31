@@ -100,7 +100,10 @@ def _poll() -> None:
             continue
         try:
             spec = json.loads(cmd_file.read_text())
-        except OSError, ValueError:
+        except (
+            OSError,
+            ValueError,
+        ):
             _finish(cmd_file, {"ok": False, "error": f"unreadable command {cmd_file.name}"})
             continue
         _log(f"command {spec.get('cmd')!r}")

@@ -45,6 +45,7 @@ import os
 import secrets
 import shutil
 import sys
+import tempfile
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -108,15 +109,24 @@ def _hashable(rel: Path) -> bool:
     return rel.suffix not in HASH_SKIP_SUFFIXES
 
 
-def tree_hash(root: Path) -> str:
+def tree_hash(root: Path, skip: frozenset[str] = frozenset()) -> str:
     """Content hash of a payload tree: sorted relative paths + file bytes.
 
     Skips what must never ship (``__pycache__``, ``*.pyc``) so dev-loop
-    bytecode noise cannot flap the stamp. Only ever computed on the
-    *bundled* tree — the installed one is trusted via its stamp.
+    bytecode noise cannot flap the stamp, plus the caller's relative POSIX
+    paths in ``skip`` — recovery's stage verification excludes the stamped
+    identity file, the one file a stage legitimately rewrites. Computed on
+    the *bundled* tree and, mid-recovery, on candidate stages; installed
+    trees are trusted via their stamp.
     """
     digest = hashlib.sha256()
-    files = sorted(p for p in root.rglob("*") if p.is_file() and _hashable(p.relative_to(root)))
+    files = sorted(
+        p
+        for p in root.rglob("*")
+        if p.is_file()
+        and _hashable(p.relative_to(root))
+        and p.relative_to(root).as_posix() not in skip
+    )
     for path in files:
         digest.update(path.relative_to(root).as_posix().encode())
         digest.update(b"\0")
@@ -129,7 +139,12 @@ def read_stamp(payload_dir: Path) -> dict | None:
     """The tree's ``payload.json``, or None when absent/unreadable/not JSON."""
     try:
         stamp = json.loads((payload_dir / "payload.json").read_text())
-    except OSError, ValueError:
+    # The trailing comma pins the <=3.13-compatible parens: ruff's py314
+    # formatter would otherwise emit PEP 758's bare, 3.14-only form.
+    except (
+        OSError,
+        ValueError,
+    ):
         return None
     return stamp if isinstance(stamp, dict) else None
 
@@ -190,14 +205,51 @@ def _live_owner(entry: Path) -> bool:
 
 
 def _complete(stage: Path) -> bool:
-    """A stage whose stamped payload.json landed. The stamp file is written
-    last (see ``_build_stage``), so its presence means the copy finished."""
+    """A tree stamped as ours — schema, product, and a string payloadHash,
+    the same gate the installed-tree check applies. For a stage this
+    attests the copy finished (the stamp file is written last, see
+    ``_build_stage``); for a dot-old it attests the tree is a former
+    installed dir rather than planted debris. Attests, not proves: a
+    well-formed stamp is writable by the same-uid planter, which is why
+    stages must additionally match the bundle's bytes (``_landable``)."""
     stamp = read_stamp(stage)
     return (
         stamp is not None
+        and stamp.get("schema") == SCHEMA
         and stamp.get("product") == PRODUCT
         and isinstance(stamp.get("payloadHash"), str)
     )
+
+
+def _landable(stage: Path, bundled_dir: Path) -> bool:
+    """Whether recovery may land this staged tree: stamped as ours
+    (``_complete``) and byte-equivalent to the bundle apart from the stamped
+    identity file, with the stamp claiming the bundle's exact full hash —
+    the exact shape an install-leg stage is built in. Deliberately narrower
+    than every stage ``_build_stage`` can produce: a swap stage carrying
+    user-edited meta.json never matches, sweeps, and recovery rides the
+    swap's complete dot-old sibling instead, else the next sync reinstalls.
+    Standalone — or a bundle missing its own identity — is the degenerate
+    case: there is nothing whose bytes can vouch for the stage, and an
+    absent bundle hashes like an empty tree, which would otherwise
+    rubber-stamp a planted identity-only stage claiming the empty digest.
+    So nothing is landable there. Unreadable candidates count as not
+    landable, never as errors: recovery sweeps and converges instead of
+    raising past the bootloader's fail-open contract."""
+    if not _complete(stage):
+        return False
+    stamp = read_stamp(stage)
+    if stamp is None:
+        return False
+    try:
+        if read_stamp(bundled_dir) is None:
+            return False
+        skip = frozenset({"payload.json"})
+        if stamp["payloadHash"] != tree_hash(bundled_dir):
+            return False
+        return tree_hash(stage, skip) == tree_hash(bundled_dir, skip)
+    except OSError:
+        return False
 
 
 def _build_stage(bundled_dir: Path, stage: Path, payload_hash: str) -> None:
@@ -210,13 +262,11 @@ def _build_stage(bundled_dir: Path, stage: Path, payload_hash: str) -> None:
 
 def _write_marker(state_dir: Path, payload_hash: str) -> None:
     """Record the we-installed marker. Best-effort: a state-dir problem must
-    never fail the sync itself. The tmp name carries our pid so concurrent
-    syncs never fight over one tmp file."""
+    never fail the sync itself."""
     try:
         state_dir.mkdir(parents=True, exist_ok=True)
-        marker = state_dir / INSTALLED_MARKER
-        tmp = marker.with_name(f".{marker.name}.{os.getpid()}.tmp")
-        tmp.write_text(
+        atomic_write_text(
+            state_dir / INSTALLED_MARKER,
             json.dumps(
                 {
                     "product": PRODUCT,
@@ -226,11 +276,38 @@ def _write_marker(state_dir: Path, payload_hash: str) -> None:
                 indent=2,
                 sort_keys=True,
             )
-            + "\n"
+            + "\n",
         )
-        tmp.replace(marker)
     except OSError:
         _log(f"could not write {state_dir / INSTALLED_MARKER}")
+
+
+# -- atomic writes ------------------------------------------------------------
+
+
+def atomic_write_text(path: Path, text: str) -> None:
+    """Replace ``path`` with ``text`` in one atomic, no-follow write.
+
+    mkstemp hands back a secrets-random name in the destination directory,
+    so no same-uid attacker can pre-plant the tmp path as a symlink the way
+    the predictable ``.<name>.<pid>.tmp`` names this replaces allowed
+    (``write_text`` would have truncated straight through their link), and
+    the closing ``os.replace`` swaps the finished file over whatever sits at
+    ``path`` — replacing a planted link wholesale, never writing through it.
+    The temp is unlinked on any failure, so a failed write leaves no litter.
+    The parent directory must exist. mkstemp's 0600 mode is the intended
+    semantics here: everything written through this helper (the web CSS and
+    the state-dir markers) is user-owned with single-user consumers.
+    """
+    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
+    tmp = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w") as fh:
+            fh.write(text)
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 # -- the one routine ---------------------------------------------------------
@@ -285,15 +362,22 @@ def _ensure_current(
     # folder missing while a dot-old or complete stage exists means the
     # previous run died between the two renames. The dot-old wins — it is
     # the user's whole previous tree, meta.json included; landing the stage
-    # is only the fallback.
+    # is only the fallback. Both legs verify before renaming: a dot-old
+    # without our stamp, or a stage not proven byte-equivalent to the
+    # bundle, is plantable debris that would otherwise be executed by Anki
+    # at next start — those stay for the sweep, and the next sync reinstalls.
     if not installed_dir.exists():
-        restored = _newest(old_dirs)
+        restored = _newest([d for d in old_dirs if _complete(d)])
         if restored is not None:
             restored.rename(installed_dir)
             old_dirs.remove(restored)
             _log(f"crash recovery: restored {restored.name} into place")
         else:
-            landed = _newest([s for s in stage_dirs if _complete(s)])
+            # Only the stage fallback consults the bundle, and no other leg's
+            # cost or failure order may move; a missing or unreadable bundle
+            # reads as not landable inside the check — the stage sweeps and
+            # the install leg reinstalls, instead of recovery crashing.
+            landed = _newest([s for s in stage_dirs if _landable(s, bundled_dir)])
             if landed is not None:
                 landed.rename(installed_dir)
                 stage_dirs.remove(landed)
@@ -303,11 +387,27 @@ def _ensure_current(
     # happens before the renames), but if the swap died before the carry,
     # a dot-old still holds the user's config — restore it before sweeping.
     if installed_dir.is_dir() and not (installed_dir / "meta.json").exists():
-        for old in old_dirs:
-            if (old / "meta.json").is_file():
-                shutil.copy2(old / "meta.json", installed_dir / "meta.json")
-                _log(f"salvaged meta.json from {old.name}")
-                break
+        # exists() follows links, so this branch is exactly where a planted
+        # dangling symlink sits: unlink it, or copy2 would create the file
+        # at the link's target instead of here. A same-uid race can swap the
+        # link for a directory between the check and the unlink — any unlink
+        # failure abandons the salvage entirely rather than copying through
+        # a path we failed to clear.
+        meta = installed_dir / "meta.json"
+        try:
+            if meta.is_symlink():
+                meta.unlink()
+        except OSError:
+            _log(f"could not clear {meta} for salvage — skipping")
+        else:
+            for old in old_dirs:
+                # is_file() follows links too: a planted source link must not
+                # duplicate (or disk-fill with) its target's content.
+                source = old / "meta.json"
+                if source.is_file() and not source.is_symlink():
+                    shutil.copy2(source, meta)
+                    _log(f"salvaged meta.json from {old.name}")
+                    break
 
     for leftover in old_dirs + stage_dirs:
         shutil.rmtree(leftover, ignore_errors=True)
@@ -378,7 +478,10 @@ def _stage_and_carry(bundled_dir: Path, installed_dir: Path, payload_hash: str) 
     try:
         _build_stage(bundled_dir, stage, payload_hash)
         meta = installed_dir / "meta.json"
-        if meta.is_file():
+        # is_file() follows links: a planted meta.json symlink must not have
+        # its target's content duplicated into the fresh stage. The stage
+        # side needs no guard — it is ours, built moments ago.
+        if meta.is_file() and not meta.is_symlink():
             shutil.copy2(meta, stage / "meta.json")
     except BaseException:
         shutil.rmtree(stage, ignore_errors=True)
