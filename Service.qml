@@ -39,9 +39,11 @@ Item {
             syncProc.command = decision.exec;
             syncProc.running = true;
         } else if (decision.action === "ask_consent" || decision.action === "offer_reinstall") {
+            // -u critical: the ask is a decision, not an FYI — at the default
+            // low urgency it flash-expires before it can be read or clicked.
             // --exec must come last and carries the click action as argv
             // (Omarchy 4.0.1 contract — the gate already version-floored us).
-            toastProc.command = ["omarchy", "notification", "send", "--app-name", "Anki Theme", decision.toast.headline, decision.toast.body, "--exec"].concat(decision.exec);
+            toastProc.command = ["omarchy", "notification", "send", "--app-name", "Anki Theme", "-u", "critical", decision.toast.headline, decision.toast.body, "--exec"].concat(decision.exec);
             toastProc.running = true;
         }
     }
