@@ -4,7 +4,7 @@ The locked behavior under test: the version floor fails closed (ticket 13),
 consent is asked once and only when Anki's data dir exists (ticket 11), the
 pre-consent service writes nothing at all, a granted click records consent
 atomically at 0600 and mounts Sync as a /usr/bin/python subprocess (tickets
-11/12), and a deleted-in-Anki add-on is offered one reinstall toast instead
+11/12), and a deleted-in-Anki add-on is offered one reinstall dialog instead
 of a silent resurrection (ticket 12).
 
 The decision table runs against the pure ``decide()``/``parse_version()``/
@@ -186,18 +186,28 @@ def test_qml_pins_every_gate_action_it_must_act_on():
     compiler behind it: a renamed or added gate action under a stale
     compiled QML (basecamp/omarchy#6981 — the reason the logic lives in
     gate.py) would log and silently do nothing. This pins the acted-on
-    actions into Service.qml's source, plus the shape facts of the
-    notification call: it sends via the CLI, at critical urgency — the
-    default low flash-expires the ask before it can be read or clicked
-    (``-u`` floor-verified at Omarchy 4.0.1) — and ``--exec`` comes last
-    (4.0.1's argv contract)."""
+    actions into Service.qml's source, plus the dialog contract (ticket
+    29): the ask is presented by an in-shell modal — not a notification —
+    that renders the decision's own copy, whose "Not now" is the old
+    ignore, and whose Allow runs the decision's exec argv through a
+    Process (grant helper for consent, Sync for reinstall)."""
     qml = (REPO / "Service.qml").read_text()
     for action in (gate.SYNC, gate.ASK_CONSENT, gate.OFFER_REINSTALL):
         assert f'"{action}"' in qml, f"Service.qml no longer handles gate action '{action}'"
-    assert '"omarchy", "notification", "send"' in qml
-    assert '"-u", "critical"' in qml
-    assert qml.index('"notification", "send"') < qml.index('"-u"')
-    assert qml.index('"--exec"') > qml.index('"-u"')
+    # The ask is a dialog now (ticket 29) — the notification route is gone.
+    assert '"omarchy", "notification", "send"' not in qml
+    # The dialog presents the gate's decision verbatim: its copy comes from
+    # the decision's toast, and the decision's exec reaches the dialog and
+    # is what Allow spawns (the exec→allowArgv→Process chain, unbroken).
+    assert "present(decision.toast, decision.exec)" in qml
+    assert "headline = toast.headline" in qml
+    assert "body = toast.body" in qml
+    assert "allowArgv = exec" in qml
+    assert "visible = true" in qml
+    assert '"Not now"' in qml
+    # Allow runs the decision's own argv — the dialog computes nothing.
+    assert "allowProc.command = allowArgv" in qml
+    assert "allowProc.running = true" in qml
 
 
 # -- the gate as the QML drives it ---------------------------------------------
@@ -282,8 +292,8 @@ def run_exec(argv: list[str]) -> subprocess.CompletedProcess:
 def test_click_through_flow(tmp_path: Path, layout: dict):
     path_env = shimmed_path(tmp_path, "4.0.1-1")
 
-    # Fresh flow: ask → click (the toast's exec, run exactly as the
-    # notification would) → payload installed, stamped, marked.
+    # Fresh flow: ask → click Allow (the dialog's exec, run exactly as
+    # allowProc would) → payload installed, stamped, marked.
     ask = run_gate(layout["anki2"], layout["state"], path_env)
     assert ask["action"] == gate.ASK_CONSENT
     grant = run_exec(ask["exec"])
@@ -316,7 +326,7 @@ def test_click_through_flow(tmp_path: Path, layout: dict):
     assert run_gate(layout["anki2"], layout["state"], path_env)["action"] == gate.SYNC
 
 
-def test_grant_is_idempotent_on_a_re_clicked_toast(tmp_path: Path, layout: dict):
+def test_grant_is_idempotent_on_a_re_confirmed_ask(tmp_path: Path, layout: dict):
     path_env = shimmed_path(tmp_path, "4.0.1-1")
     ask = run_gate(layout["anki2"], layout["state"], path_env)
     run_exec(ask["exec"])

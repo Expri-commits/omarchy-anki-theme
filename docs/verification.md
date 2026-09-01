@@ -154,7 +154,7 @@ Composition:
   during Anki launch stays convergent); downgrade converges backward.
 - **Below-floor legs** (ticket 13): service under a PATH-shimmed old
   `omarchy-version`, **and with the command failing to run entirely**, stays
-  inert — one journal line, consent toast never shown, nothing mounted; add-on
+  inert — one journal line, consent dialog never shown, nothing mounted; add-on
   with the palette file **absent or unreadable** applies nothing — one log
   line, surfaces assert against characterized Anki defaults. Characterized
   with ticket 23: the no-op must be **total** — hooks are wired before the
@@ -164,10 +164,10 @@ Composition:
   pin the base dark (`pm.meta["theme"]`) so the characterized defaults they
   assert against aren't polarity-relative.
 - **Consent / reinstall / standalone smoke** (tickets 11/12): fresh consent
-  flow (toast → click → install → minimal `meta.json` → no re-ask next service
-  start); reinstall toast after Anki-side delete, once per service start,
+  flow (dialog → Allow → install → minimal `meta.json` → no re-ask next service
+  start); reinstall dialog after Anki-side delete, once per service start,
   gated on the Anki data dir existing; standalone mode (plugin removed →
-  theming continues, no Omarchy notifications; a drift tooltip may still fire,
+  theming continues, no consent asks or updates; a drift tooltip may still fire,
   ticket 15).
 - **Drift smoke** (ticket 15): mocked retract-class inventory drift — one log
   line + one transient tooltip, second start silent (state-dir signature

@@ -17,7 +17,7 @@ as authored. No network access, no dependencies beyond Omarchy and Anki.
 ## How it works
 
 An Omarchy plugin (Quickshell `service`) watches the theme state directory.
-The first time it runs, it asks through an Omarchy notification for consent
+The first time it runs, it shows a dialog asking for consent
 to install a small bundled add-on into Anki
 (`~/.local/share/Anki2/addons21/anki_theme`). The add-on reads `colors.toml`,
 maps the palette onto Anki's color variables, and re-applies through Anki's
@@ -40,11 +40,11 @@ coverage.
 omarchy plugin add https://github.com/Expri-commits/omarchy-anki-theme
 ```
 
-Nothing is written into your Anki profile until you click the consent
-notification. Start Anki (or restart it if it is already running) and it
+Nothing is written into your Anki profile until you click Allow in the
+consent dialog. Start Anki (or restart it if it is already running) and it
 follows your theme. Plugin updates also update the installed add-on at the
 next shell restart or Anki start, under the same consent. If you delete the
-add-on in Anki but keep the plugin, a notification offers to reinstall it;
+add-on in Anki but keep the plugin, a dialog offers to reinstall it;
 ignoring that leaves things as they are.
 
 ## Remove

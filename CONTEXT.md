@@ -82,9 +82,10 @@ mount Sync — emitted as one JSON line (with the acting outcome's complete
 _Avoid_: startup check, preflight
 
 **Grant**:
-The consent toast's click action (`service/grant.py`): record Consent, then
-mount Sync as a subprocess — the click completes the whole install without
-the service being alive.
+The consent dialog's Allow action (`service/grant.py`): record Consent, then
+mount Sync as a subprocess. An interrupted Allow is safe — Consent lands
+atomically before any install, and the next service start's Gate completes
+whatever the interruption left.
 _Avoid_: installer callback, consent handler
 
 **Consent**:
