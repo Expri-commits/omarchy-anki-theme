@@ -36,6 +36,7 @@ and usage errors on stderr, only a crash exits nonzero.
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -49,6 +50,13 @@ PYTHON = "/usr/bin/python"
 # service depends on; v4.0.0's shell-string form is incompatible.
 VERSION_FLOOR: tuple[int, int, int] = (4, 0, 1)
 VERSION_CMD = "omarchy-version"
+# H12: the bare name above is the one PATH-resolved invocation left in the
+# service, and PATH control is same-uid control — so absolute candidates are
+# tried first and the ordinary Arch install cannot be shadowed. The bare
+# PATH name stays as the fallback for unusual installs (a ~/.local/bin
+# overlay); a PATH lookup that fails already fails closed inert with a
+# detail line naming what was tried.
+VERSION_CMD_CANDIDATES: list[str] = ["/usr/bin/omarchy-version"]
 VERSION_TIMEOUT_S = 5.0
 
 # State-dir names. The marker is Sync's (sync.py); re-declared rather than
@@ -92,24 +100,45 @@ def parse_version(text: str) -> tuple[int, int, int] | None:
     return (int(match[1]), int(match[2]), int(match[3] or 0))
 
 
+def resolve_version_cmd(candidates: list[str] | None = None, fallback: str = VERSION_CMD) -> str:
+    """The ``omarchy-version`` command to run (H12): the first candidate
+    that is an existing executable file, else the bare PATH name.
+
+    Pure — callers pass their own candidate list to pin selection order,
+    the executability filter, and the fallback in tests without spawning
+    anything. Nothing here raises: a machine with neither form present
+    resolves to the PATH name, whose failure ``run_version_cmd`` reports
+    inert.
+    """
+    if candidates is None:
+        candidates = VERSION_CMD_CANDIDATES
+    for candidate in candidates:
+        path = Path(candidate)
+        # is_file, not just os.access: a +x directory passes X_OK but is
+        # not a command, and handing one to exec would only trade a clear
+        # "not found" detail for a confusing OSError.
+        if path.is_file() and os.access(path, os.X_OK):
+            return candidate
+    return fallback
+
+
 def run_version_cmd() -> tuple[tuple[int, int, int] | None, str]:
     """Run ``omarchy-version``; the parsed triple and what was seen.
 
     The second element is a human-readable detail for the inert journal
     line, so a gated machine can tell "old" from "broken" apart.
     """
+    cmd = resolve_version_cmd()
     try:
-        proc = subprocess.run(
-            [VERSION_CMD], capture_output=True, text=True, timeout=VERSION_TIMEOUT_S
-        )
+        proc = subprocess.run([cmd], capture_output=True, text=True, timeout=VERSION_TIMEOUT_S)
     except FileNotFoundError:
-        return None, f"'{VERSION_CMD}' not found on PATH"
+        return None, f"'{cmd}' not found (tried {VERSION_CMD_CANDIDATES}, then PATH)"
     except subprocess.TimeoutExpired:
-        return None, f"'{VERSION_CMD}' timed out after {VERSION_TIMEOUT_S:.0f}s"
+        return None, f"'{cmd}' timed out after {VERSION_TIMEOUT_S:.0f}s"
     except OSError as exc:
-        return None, f"'{VERSION_CMD}' failed to run ({exc.strerror or exc})"
+        return None, f"'{cmd}' failed to run ({exc.strerror or exc})"
     if proc.returncode != 0:
-        return None, f"'{VERSION_CMD}' exited {proc.returncode}"
+        return None, f"'{cmd}' exited {proc.returncode}"
     raw = next((line.strip() for line in proc.stdout.splitlines() if line.strip()), "")
     version = parse_version(raw)
     if version is None:

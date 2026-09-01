@@ -320,6 +320,23 @@ def test_propagation_downgrade_converges_backward(gate3_down, leg_home):
 # -- below-floor legs (ticket 13) -----------------------------------------------------
 
 
+def run_gate_pinned(anki2: pathlib.Path, state: pathlib.Path, candidates: list[str], path_env: str):
+    """gate.py with the version resolver's candidate list pinned (H12): a
+    planted shim must win over the host's real ``/usr/bin/omarchy-version``,
+    or the below-floor shapes stop being machine-independent. Same ``-c``
+    entry-point pattern as tier 1's ``run_gate`` — the service dir goes on
+    sys.path explicitly because ``-c`` gets no script-dir entry."""
+    setup = (
+        f"import sys; sys.path.insert(0, {str(REPO / 'service')!r}); "
+        f"import gate; gate.VERSION_CMD_CANDIDATES = {candidates!r}; "
+        "raise SystemExit(gate.main(sys.argv[1:]))"
+    )
+    return run_service(
+        ["/usr/bin/python", "-B", "-c", setup, str(anki2), str(state)],
+        env_extra={"PATH": path_env},
+    )
+
+
 def test_below_floor_service_gates_inert(gate3_down, tmp_path):
     """Old, failing, and missing ``omarchy-version`` all gate the service
     inert: one decision, no exec, no toast — fail closed (the QML acts only
@@ -331,10 +348,7 @@ def test_below_floor_service_gates_inert(gate3_down, tmp_path):
     for behavior in ("old", "failing", "missing"):
         shim = version_shim(tmp_path / f"shim-{behavior}", behavior)
         gate_path = str(shim) if behavior == "missing" else f"{shim}:{os.environ['PATH']}"
-        proc = run_service(
-            ["/usr/bin/python", "-B", str(SERVICE_GATE), str(anki2), str(state)],
-            env_extra={"PATH": gate_path},
-        )
+        proc = run_gate_pinned(anki2, state, [str(shim / "omarchy-version")], gate_path)
         assert proc.returncode == 0, f"[{behavior}] gate crashed: {proc.stderr[-400:]}"
         decision = json.loads(proc.stdout.strip().splitlines()[-1])
         assert decision["action"] == "inert", f"[{behavior}] {decision}"
@@ -465,10 +479,15 @@ def test_consent_reinstall_standalone(gate3_down):
     scratch = leg_dir(gate3_down, "consent")
     anki2 = scratch / "Anki2"
     (anki2 / "addons21").mkdir(parents=True)
-    state = scratch / "state"
+    # grant.py records consent only into the canonical
+    # $HOME/.local/state/omarchy/anki-theme (H9), so the leg's HOME is a
+    # scratch and the state dir is that canonical path under it — the same
+    # shape the QML's own stateDir has under the real HOME.
+    home = scratch / "home"
+    state = home / ".local/state/omarchy/anki-theme"
     installed = anki2 / "addons21" / "anki_theme"
     shim = version_shim(scratch / "shim", "current")
-    gate_env = {"PATH": f"{shim}:{os.environ['PATH']}"}
+    gate_env = {"PATH": f"{shim}:{os.environ['PATH']}", "HOME": str(home)}
 
     def gate() -> dict:
         proc = run_service(
@@ -486,7 +505,9 @@ def test_consent_reinstall_standalone(gate3_down):
     assert argv[0] == "/usr/bin/python" and argv[1] == "-B" and argv[2].endswith("grant.py")
 
     # 2 — the click: consent lands first (0600), then the install.
-    grant = run_service(argv)
+    # HOME rides along: the grant helper resolves the canonical state dir
+    # from it (H9), and Sync inherits the same scratch world.
+    grant = run_service(argv, env_extra=gate_env)
     assert grant.returncode == 0, f"grant failed: {grant.stderr[-400:]}"
     consent = json.loads((state / "consent.json").read_text())
     assert consent["granted"] is True and "pluginVersion" in consent
@@ -509,7 +530,7 @@ def test_consent_reinstall_standalone(gate3_down):
     decision = gate()
     assert decision["action"] == "offer_reinstall", decision
     assert "addons21/anki_theme" in decision["toast"]["body"], decision
-    reinstall = run_service(decision["exec"])
+    reinstall = run_service(decision["exec"], env_extra=gate_env)
     assert reinstall.returncode == 0, f"reinstall sync failed: {reinstall.stderr[-400:]}"
     assert installed.is_dir(), "the reinstall never landed"
     assert gate()["action"] == "sync", "the reinstall did not settle the decision"

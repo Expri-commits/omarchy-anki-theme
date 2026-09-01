@@ -4,13 +4,18 @@ The locked behavior under test: the version floor fails closed (ticket 13),
 consent is asked once and only when Anki's data dir exists (ticket 11), the
 pre-consent service writes nothing at all, a granted click records consent
 atomically at 0600 and mounts Sync as a /usr/bin/python subprocess (tickets
-11/12), and a deleted-in-Anki add-on is offered one reinstall dialog instead
-of a silent resurrection (ticket 12).
+11/12), a deleted-in-Anki add-on is offered one reinstall dialog instead
+of a silent resurrection (ticket 12), and the 0.1.1 hardening holds
+(ticket 27): the grant records only into the canonical state dir, the QML
+validates the decision's exec shape, and ``omarchy-version`` is resolved
+from absolute candidates before the PATH fallback.
 
 The decision table runs against the pure ``decide()``/``parse_version()``/
-``read_consent()`` functions; the legs that spawn things run gate.py and
-grant.py as real subprocesses against a scratch Anki2 root with a PATH-
-shimmed ``omarchy-version`` — the same shape the QML service drives.
+``read_consent()``/``resolve_version_cmd()`` functions; the legs that spawn
+things run gate.py and grant.py as real subprocesses against a scratch
+Anki2 root with a shimmed ``omarchy-version`` pinned into the resolver's
+candidate list (plus PATH-fallback legs) — the same shape the QML service
+drives, independent of whether the real machine ships /usr/bin/omarchy-version.
 """
 
 import json
@@ -57,6 +62,50 @@ RUN_PY = "/usr/bin/python"
 )
 def test_parse_version(text, expected):
     assert gate.parse_version(text) == expected
+
+
+# -- the omarchy-version resolver (H12) ----------------------------------------
+
+
+def make_cmd(tmp_path: Path, name: str, mode: int = 0o755) -> str:
+    """An executable-looking command file; ``mode`` de-execs it on demand."""
+    path = tmp_path / name
+    path.write_text("#!/bin/sh\nexit 0\n")
+    path.chmod(mode)
+    return str(path)
+
+
+def test_resolver_takes_the_first_executable_candidate(tmp_path: Path):
+    first, second = make_cmd(tmp_path, "first"), make_cmd(tmp_path, "second")
+    assert gate.resolve_version_cmd([first, second]) == first
+
+
+def test_resolver_skips_missing_and_non_executable_candidates(tmp_path: Path):
+    missing = str(tmp_path / "missing")
+    plain = make_cmd(tmp_path, "plain", mode=0o644)
+    good = make_cmd(tmp_path, "good")
+    assert gate.resolve_version_cmd([missing, plain, good]) == good
+
+
+def test_resolver_skips_a_traversable_directory(tmp_path: Path):
+    # os.access(X_OK) is true for a +x directory — still not a command.
+    directory = tmp_path / "dir"
+    directory.mkdir()
+    directory.chmod(0o755)
+    good = make_cmd(tmp_path, "good")
+    assert gate.resolve_version_cmd([str(directory), good]) == good
+
+
+def test_resolver_falls_back_to_the_bare_path_name(tmp_path: Path):
+    assert gate.resolve_version_cmd([str(tmp_path / "nothing")], fallback="omarchy-version") == (
+        "omarchy-version"
+    )
+
+
+def test_resolver_defaults_are_the_shipped_absolute_candidates():
+    assert gate.VERSION_CMD_CANDIDATES == ["/usr/bin/omarchy-version"]
+    assert gate.resolve_version_cmd() in (*gate.VERSION_CMD_CANDIDATES, gate.VERSION_CMD)
+    assert all(candidate.startswith("/") for candidate in gate.VERSION_CMD_CANDIDATES)
 
 
 # -- the decision table ------------------------------------------------------
@@ -208,6 +257,14 @@ def test_qml_pins_every_gate_action_it_must_act_on():
     # Allow runs the decision's own argv — the dialog computes nothing.
     assert "allowProc.command = allowArgv" in qml
     assert "allowProc.running = true" in qml
+    # H9: the exec is structurally validated before anything runs it — an
+    # array of strings or nothing runs, and only for the acting actions
+    # (inert/idle carry no exec by design).
+    assert "function isExecArgv(argv)" in qml
+    assert "Array.isArray(argv)" in qml
+    assert 'typeof arg === "string"' in qml
+    assert "acting && !isExecArgv(decision.exec)" in qml
+    assert "exec is not an argv array of strings" in qml
 
 
 # -- the gate as the QML drives it ---------------------------------------------
@@ -230,33 +287,68 @@ def shimmed_path(tmp_path: Path, body: str | None, *, fail: bool = False) -> str
     return str(bin_dir)
 
 
-def run_gate(anki2: Path, state: Path, path_env: str) -> dict:
-    proc = subprocess.run(
-        [RUN_PY, str(GATE_PY), str(anki2), str(state)],
-        capture_output=True,
-        text=True,
-        env={**os.environ, "PATH": path_env},
-        timeout=30,
-    )
+def shim_candidate(tmp_path: Path) -> list[str]:
+    """The resolver pin for the scratch shim site — where ``shimmed_path``
+    puts its ``omarchy-version`` (or would, when the test wants one
+    missing). Gate subprocess runs always pass it: the resolver's absolute
+    candidates would otherwise hit the real machine's
+    /usr/bin/omarchy-version and the shimmed scenarios stop being
+    machine-independent."""
+    return [str(tmp_path / "bin" / "omarchy-version")]
+
+
+def run_gate(
+    anki2: Path, state: Path, path_env: str, *, version_candidates: list[str] | None = None
+) -> dict:
+    """Run gate.py as the QML does — one decision JSON line.
+
+    ``version_candidates`` pins the resolver's candidate list for the
+    subprocess (same entry point, module constant set before ``main``);
+    unpinned runs exercise the shipped default.
+    """
+    env = {**os.environ, "PATH": path_env}
+    if version_candidates is None:
+        argv = [RUN_PY, str(GATE_PY), str(anki2), str(state)]
+    else:
+        # Same entry point as gate.py itself, with the resolver's candidate
+        # list pinned before main() reads it (-c gets no script-dir
+        # sys.path entry, so the service dir goes in explicitly).
+        setup = (
+            f"import sys; sys.path.insert(0, {str(REPO / 'service')!r}); "
+            f"import gate; gate.VERSION_CMD_CANDIDATES = {version_candidates!r}; "
+            "raise SystemExit(gate.main(sys.argv[1:]))"
+        )
+        argv = [RUN_PY, "-B", "-c", setup, str(anki2), str(state)]
+    proc = subprocess.run(argv, capture_output=True, text=True, env=env, timeout=30)
     assert proc.returncode == 0, proc.stderr
     return json.loads(proc.stdout)
 
 
 @pytest.fixture
 def layout(tmp_path: Path) -> dict:
+    # The state dir lives under a scratch HOME in the canonical shape:
+    # grant.py only records consent into $HOME/.local/state/omarchy/
+    # anki-theme (H9), so the subprocess tests run it with that HOME.
     anki2 = tmp_path / "Anki2"
     (anki2 / "addons21").mkdir(parents=True)
+    home = tmp_path / "home"
     return {
         "anki2": anki2,
         "addons": anki2 / "addons21",
         "installed": anki2 / "addons21" / "anki_theme",
-        "state": tmp_path / "state",
+        "home": home,
+        "state": home / ".local" / "state" / "omarchy" / "anki-theme",
     }
 
 
 @pytest.mark.parametrize("shim", ["4.0.1-1", "4.2.0", "v9.9.9-1"])
 def test_gate_asks_for_consent_above_floor(tmp_path: Path, layout: dict, shim: str):
-    decision = run_gate(layout["anki2"], layout["state"], shimmed_path(tmp_path, shim))
+    decision = run_gate(
+        layout["anki2"],
+        layout["state"],
+        shimmed_path(tmp_path, shim),
+        version_candidates=shim_candidate(tmp_path),
+    )
     assert decision["action"] == gate.ASK_CONSENT
     # The pre-consent promise, literally: nothing written anywhere.
     assert not layout["installed"].exists()
@@ -269,24 +361,117 @@ def test_gate_asks_for_consent_above_floor(tmp_path: Path, layout: dict, shim: s
     [("3.8.4", False), ("4.0.0", False), ("garbage", False), (None, True), (None, None)],
 )
 def test_gate_inert_below_floor_or_broken_version_command(tmp_path: Path, layout: dict, body, fail):
-    decision = run_gate(layout["anki2"], layout["state"], shimmed_path(tmp_path, body, fail=fail))
+    decision = run_gate(
+        layout["anki2"],
+        layout["state"],
+        shimmed_path(tmp_path, body, fail=fail),
+        version_candidates=shim_candidate(tmp_path),
+    )
     assert decision["action"] == gate.INERT
     assert "toast" not in decision
     assert not layout["state"].exists()
 
 
 def test_gate_idle_without_anki_data_dir(tmp_path: Path):
-    decision = run_gate(tmp_path / "Anki2", tmp_path / "state", shimmed_path(tmp_path, "4.0.1"))
+    decision = run_gate(
+        tmp_path / "Anki2",
+        tmp_path / "state",
+        shimmed_path(tmp_path, "4.0.1"),
+        version_candidates=shim_candidate(tmp_path),
+    )
     assert decision["action"] == gate.IDLE
+
+
+# -- version-command resolution through the real gate (H12) ---------------------
+
+
+def test_gate_falls_back_to_the_path_shim_when_candidates_miss(tmp_path: Path, layout: dict):
+    # The absolute candidates are the fast path, not a cage: an install
+    # that lives only on PATH (a ~/.local/bin overlay) still versions —
+    # here the candidate pin misses and the PATH shim answers.
+    decision = run_gate(
+        layout["anki2"],
+        layout["state"],
+        shimmed_path(tmp_path, "4.0.1-1"),
+        version_candidates=[str(tmp_path / "absent" / "omarchy-version")],
+    )
+    assert decision["action"] == gate.ASK_CONSENT
+
+
+def test_gate_prefers_the_absolute_candidate_over_a_stale_path(tmp_path: Path, layout: dict):
+    # The point of H12: a PATH entry cannot shadow the absolute candidate.
+    # The PATH shim is below the floor; the candidate shim is above it —
+    # the decision must follow the candidate.
+    stale = tmp_path / "bin" / "omarchy-version"
+    stale.parent.mkdir()
+    stale.write_text("#!/bin/sh\necho '1.0.0'\n")
+    stale.chmod(0o755)
+    preferred = tmp_path / "abs" / "omarchy-version"
+    preferred.parent.mkdir()
+    preferred.write_text("#!/bin/sh\necho '4.2.0-1'\n")
+    preferred.chmod(0o755)
+    decision = run_gate(
+        layout["anki2"],
+        layout["state"],
+        f"{tmp_path / 'bin'}:{os.environ['PATH']}",
+        version_candidates=[str(preferred)],
+    )
+    assert decision["action"] == gate.ASK_CONSENT
+
+
+def test_gate_inert_detail_names_what_was_tried(tmp_path: Path, layout: dict):
+    # A broken resolution is journal-visible: the inert detail says the
+    # candidates were tried before PATH gave up.
+    decision = run_gate(
+        layout["anki2"],
+        layout["state"],
+        str(tmp_path / "empty-bin"),  # a PATH with no omarchy-version anywhere
+        version_candidates=[str(tmp_path / "absent" / "omarchy-version")],
+    )
+    assert decision["action"] == gate.INERT
+    assert "not found" in decision["message"]
+    assert "tried" in decision["message"]
+    assert str(tmp_path / "absent" / "omarchy-version") in decision["message"]
 
 
 # -- the click-through flow ----------------------------------------------------
 
 
-def run_exec(argv: list[str]) -> subprocess.CompletedProcess:
-    proc = subprocess.run(argv, capture_output=True, text=True, timeout=120)
+def run_exec(argv: list[str], home: Path | None = None) -> subprocess.CompletedProcess:
+    """Run a decision's exec exactly as the dialog's allowProc would.
+
+    ``home`` sets the subprocess HOME: the grant helper records consent
+    only into the canonical state dir under it (H9), so the scratch tests
+    point it at the scratch — the live shell does the same with the user's
+    real home.
+    """
+    env = {**os.environ}
+    if home is not None:
+        env["HOME"] = str(home)
+    proc = subprocess.run(argv, capture_output=True, text=True, timeout=120, env=env)
     assert proc.returncode == 0, proc.stderr
     return proc
+
+
+def test_grant_refuses_a_noncanonical_state_dir_writing_nothing(tmp_path: Path):
+    """H9: the grant helper records consent only into the canonical state
+    dir under $HOME — the one location the service's gate reads back. Any
+    other dir is refused with a usage-style exit 2 before a byte is
+    written: no rogue consent file, nothing under the scratch HOME."""
+    home = tmp_path / "home"
+    rogue = tmp_path / "rogue-state"
+    proc = subprocess.run(
+        [RUN_PY, "-B", str(GRANT_PY), str(tmp_path / "Anki2"), str(rogue)],
+        capture_output=True,
+        text=True,
+        env={**os.environ, "HOME": str(home)},
+        timeout=30,
+    )
+    assert proc.returncode == 2
+    assert "refusing" in proc.stderr
+    assert "canonical state dir" in proc.stderr
+    assert not rogue.exists()
+    assert not home.exists()
 
 
 def test_click_through_flow(tmp_path: Path, layout: dict):
@@ -294,9 +479,14 @@ def test_click_through_flow(tmp_path: Path, layout: dict):
 
     # Fresh flow: ask → click Allow (the dialog's exec, run exactly as
     # allowProc would) → payload installed, stamped, marked.
-    ask = run_gate(layout["anki2"], layout["state"], path_env)
+    ask = run_gate(
+        layout["anki2"],
+        layout["state"],
+        path_env,
+        version_candidates=shim_candidate(tmp_path),
+    )
     assert ask["action"] == gate.ASK_CONSENT
-    grant = run_exec(ask["exec"])
+    grant = run_exec(ask["exec"], home=layout["home"])
 
     consent_path = layout["state"] / "consent.json"
     consent = json.loads(consent_path.read_text())
@@ -312,25 +502,52 @@ def test_click_through_flow(tmp_path: Path, layout: dict):
     assert json.loads(grant.stdout)["status"] == sync.INSTALLED
 
     # Granted: the next service start converges instead of re-asking.
-    mounted = run_gate(layout["anki2"], layout["state"], path_env)
+    mounted = run_gate(
+        layout["anki2"],
+        layout["state"],
+        path_env,
+        version_candidates=shim_candidate(tmp_path),
+    )
     assert mounted["action"] == gate.SYNC
-    assert json.loads(run_exec(mounted["exec"]).stdout)["status"] == sync.CURRENT
+    assert json.loads(run_exec(mounted["exec"], home=layout["home"]).stdout)["status"] == (
+        sync.CURRENT
+    )
 
     # Deleted in Anki with the plugin kept: one reinstall offer, whose
     # click is plain Sync — never a silent resurrection.
     shutil.rmtree(layout["installed"])
-    offered = run_gate(layout["anki2"], layout["state"], path_env)
+    offered = run_gate(
+        layout["anki2"],
+        layout["state"],
+        path_env,
+        version_candidates=shim_candidate(tmp_path),
+    )
     assert offered["action"] == gate.OFFER_REINSTALL
-    assert json.loads(run_exec(offered["exec"]).stdout)["status"] == sync.INSTALLED
+    assert json.loads(run_exec(offered["exec"], home=layout["home"]).stdout)["status"] == (
+        sync.INSTALLED
+    )
     assert (layout["installed"] / "__init__.py").is_file()
-    assert run_gate(layout["anki2"], layout["state"], path_env)["action"] == gate.SYNC
+    assert (
+        run_gate(
+            layout["anki2"],
+            layout["state"],
+            path_env,
+            version_candidates=shim_candidate(tmp_path),
+        )["action"]
+        == gate.SYNC
+    )
 
 
 def test_grant_is_idempotent_on_a_re_confirmed_ask(tmp_path: Path, layout: dict):
     path_env = shimmed_path(tmp_path, "4.0.1-1")
-    ask = run_gate(layout["anki2"], layout["state"], path_env)
-    run_exec(ask["exec"])
-    second_click = run_exec(ask["exec"])
+    ask = run_gate(
+        layout["anki2"],
+        layout["state"],
+        path_env,
+        version_candidates=shim_candidate(tmp_path),
+    )
+    run_exec(ask["exec"], home=layout["home"])
+    second_click = run_exec(ask["exec"], home=layout["home"])
     # A second click re-records consent (a click is a click) and Sync
     # converges on current — no second install, no damage.
     assert json.loads(second_click.stdout)["status"] == sync.CURRENT
@@ -341,8 +558,13 @@ def test_grant_runs_sync_on_the_real_bundled_payload(tmp_path: Path, layout: dic
     # The grant's subprocess must run the payload the plugin actually
     # ships — the bundled tree in this repo, verbatim. The oracle skips
     # what never ships independently of Sync's own rule: dev-loop bytecode.
-    ask = run_gate(layout["anki2"], layout["state"], shimmed_path(tmp_path, "4.0.1"))
-    run_exec(ask["exec"])
+    ask = run_gate(
+        layout["anki2"],
+        layout["state"],
+        shimmed_path(tmp_path, "4.0.1"),
+        version_candidates=shim_candidate(tmp_path),
+    )
+    run_exec(ask["exec"], home=layout["home"])
 
     def shippable(root: Path) -> set[str]:
         return {

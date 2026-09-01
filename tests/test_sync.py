@@ -121,6 +121,18 @@ def test_tree_hash_skips_pycache_and_pyc(tmp_path: Path):
     assert sync.tree_hash(clean) == sync.tree_hash(dirty)
 
 
+def test_tree_hash_ignores_a_stray_web_dir(tmp_path: Path):
+    """``web`` joining HASH_SKIP_DIRS is stamp-neutral (H6 groundwork): the
+    bundle never ships one, so a tree hashes identically with and without the
+    generated CSS the runtime leaves behind in a dev checkout — existing
+    installs keep their CURRENT stamp across the change."""
+    clean = write_tree(tmp_path / "clean", V1_FILES)
+    with_web = write_tree(tmp_path / "withweb", V1_FILES)
+    (with_web / "web").mkdir()
+    (with_web / "web" / "anki_theme.css").write_text("body { background: black }\n")
+    assert sync.tree_hash(clean) == sync.tree_hash(with_web)
+
+
 def test_tree_hash_on_the_real_repo_payload_is_stable():
     """The shipped bundle hashes cleanly with dev bytecode present (the
     repo's own ``__pycache__`` from running the suite)."""
@@ -234,6 +246,59 @@ def test_bundle_is_never_written(layout: dict):
     before = snapshot(layout["bundled"])
     assert run(layout).status == "swapped"
     assert snapshot(layout["bundled"]) == before
+
+
+# -- the current leg re-verifies the installed tree (H6) -----------------------
+
+
+def test_tampered_installed_tree_swaps_and_converges(layout: dict):
+    """A matching stamp is a claim about the tree, not proof of it: a same-uid
+    writer's edit (or bit-rot) must not ride as CURRENT until the next
+    payload change. The divergence takes the same swap leg a stamp drift
+    would — which converges (one swap, then CURRENT), so tampering can never
+    loop the boot."""
+    assert run(layout).status == "installed"
+    write_tree(layout["installed"], {"__init__.py": "# tampered\n"})
+    result = run(layout)
+    assert result.status == "swapped"
+    assert (layout["installed"] / "__init__.py").read_text() == "# v1\n"
+    assert stamp_of(layout)["payloadHash"] == sync.tree_hash(layout["bundled"])
+    assert run(layout).status == "current"
+
+
+def test_diverging_installed_config_json_swaps_and_converges(layout: dict):
+    """config.json is compared, not skipped: Anki's add-on docs give the file
+    exactly one writer — the install itself (it is the defaults file;
+    ``writeConfig`` persists user edits into meta.json) — so a diverging copy
+    is real drift, never a legitimate variant."""
+    assert run(layout).status == "installed"
+    write_tree(layout["installed"], {"config.json": '{"contrast_clamp": "corrupted"}\n'})
+    assert run(layout).status == "swapped"
+    assert (layout["installed"] / "config.json").read_text() == V1_FILES["config.json"]
+    assert run(layout).status == "current"
+
+
+def test_user_edited_meta_json_stays_current(layout: dict):
+    """The thrash trap: meta.json is the one carried file, so user edits and
+    Anki-owned state (``disabled``) must read as a legitimate variant —
+    comparing its content would swap on every boot."""
+    assert run(layout).status == "installed"
+    write_tree(
+        layout["installed"],
+        {"meta.json": '{"config": {"contrast_clamp": false}, "disabled": true}\n'},
+    )
+    assert run(layout).status == "current"
+
+
+def test_runtime_generated_web_and_pycache_stay_current(layout: dict):
+    """The runtime generates ``web/anki_theme.css`` inside the installed tree
+    only; with dev bytecode, neither may read as divergence."""
+    assert run(layout).status == "installed"
+    (layout["installed"] / "web").mkdir()
+    (layout["installed"] / "web" / "anki_theme.css").write_text("body {}\n")
+    (layout["installed"] / "__pycache__").mkdir()
+    (layout["installed"] / "__pycache__" / "runtime.pyc").write_bytes(b"\x00")
+    assert run(layout).status == "current"
 
 
 # -- refusal legs ------------------------------------------------------------

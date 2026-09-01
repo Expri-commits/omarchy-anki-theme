@@ -17,6 +17,11 @@ A click also arrives for a consent that was already granted (a re-shown
 toast, a slow finger): recording is idempotent and Sync converges, so the
 second run is a no-op install. Failure of the Sync leg leaves consent
 recorded — the grant happened; the next service start finishes the job.
+
+The state dir is pinned (H9): ``main`` records consent only into the
+canonical ``$HOME/.local/state/omarchy/anki-theme`` — Service.qml's
+``stateDir``, the one location the gate ever reads back — and refuses
+anything else with a usage error before writing a byte.
 """
 
 from __future__ import annotations
@@ -62,6 +67,15 @@ def record_consent(state_dir: Path, plugin_version: str) -> Path:
     return consent
 
 
+def canonical_state_dir() -> Path:
+    """The one state dir a grant may write: ``$HOME/.local/state/omarchy/
+    anki-theme`` — Service.qml's ``stateDir``, the only consent location
+    the service's gate reads back. Resolved, so a symlinked HOME compares
+    equal to the path the QML built from it.
+    """
+    return (Path.home() / ".local/state/omarchy/anki-theme").resolve()
+
+
 def read_plugin_version(plugin_dir: Path) -> str:
     """The manifest's version — best-effort; "unknown" never blocks a grant."""
     try:
@@ -80,6 +94,11 @@ def read_plugin_version(plugin_dir: Path) -> str:
 def main(argv: list[str]) -> int:
     """``grant.py <anki2_root> <state_dir>`` — record consent, mount Sync.
 
+    ``state_dir`` must be the canonical one (``canonical_state_dir``): the
+    QML always passes that, and consent recorded anywhere else would be
+    consent the service never sees. Anything else is a usage error — exit
+    2, stderr, nothing written.
+
     Stdout relays Sync's single JSON result line for the journal; logs go to
     stderr, mirroring the gate and the sync CLI.
     """
@@ -87,6 +106,14 @@ def main(argv: list[str]) -> int:
         print(f"usage: {Path(sys.argv[0]).name} <anki2_root> <state_dir>", file=sys.stderr)
         return 2
     anki2_root, state_dir = Path(argv[0]), Path(argv[1])
+    canonical = canonical_state_dir()
+    if state_dir.resolve() != canonical:
+        print(
+            f"grant: refusing state dir {state_dir} — consent is only recorded "
+            f"into the canonical state dir {canonical}",
+            file=sys.stderr,
+        )
+        return 2
     plugin_dir = Path(__file__).resolve().parent.parent
     bundled = plugin_dir / "payload" / "anki_theme"
     installed = anki2_root / ADDON_SEGMENT

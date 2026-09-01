@@ -14,6 +14,12 @@ machine; regressions get investigated, never erased.
 
 ## Log
 
+Provenance note (appended 2026-09-01, ticket 27 H10): several rows below
+carry SHAs from before the 2026-08-31 history scrub and metadata rewrite
+(privacy pass) — those commits no longer resolve in this repository, and the
+measurements stand as recorded. `ankiya` in older method notes is the add-on
+folder's name before the same-day rename to `anki_theme` (same code).
+
 | Date | Commit | Metric | Value | Method | Notes |
 | ---- | ------ | ------ | ----- | ------ | ----- |
 | 2026-08-29 | 3a31695 | dev-loop: watcher/IPC plugin reload | < 1 s (same-second) | journal timestamps of `Local plugin changed` → service mount proof-file rewrite | Reload re-instantiates but runs **stale** compiled QML (upstream basecamp/omarchy#6981) — not a valid apply path for code changes |

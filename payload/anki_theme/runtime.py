@@ -31,6 +31,12 @@ Between the palette read and the mapping sits the clamp (tickets 08/18):
 verbatim pass-through when the ``contrast_clamp`` config is off — and a
 flip of that config in the add-on dialog forces a re-apply.
 
+Untrusted-input caps (ticket 27): palette values are downloadable internet
+content, so the palette read refuses files over ``PALETTE_CAP_BYTES`` through
+a bounded read (a real palette is ~1–2 KB), and ``applied.jsonl`` rotates a
+single ``.1`` generation past ``APPLIED_ROTATE_BYTES`` — both failures land
+in the same never-break-theming guards as every other I/O fault.
+
 The watcher: ``QFileSystemWatcher`` on ``~/.local/state/omarchy/current`` —
 a theme swap is rm+mv of ``current/theme`` (a new inode), so the parent dir
 is the stable target — with a 150 ms debounce and a palette-digest guard.
@@ -49,6 +55,7 @@ it never gates the apply, whose unknown-name skips stay tolerant.
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import time
 import traceback
@@ -84,6 +91,16 @@ THEME_NAME_FILE = STATE_DIR / "theme.name"
 PLUGIN_STATE_DIR = pathlib.Path.home() / ".local/state/omarchy/anki-theme"
 APPLIED_LOG = PLUGIN_STATE_DIR / "applied.jsonl"
 
+# Palette size cap (ticket 27, H7): palette values are downloadable internet
+# content (Omarchy users import/share themes), so the read is bounded. A real
+# colors.toml is 26 keys ≈ 1–2 KB; 64 KiB sits three orders of magnitude above
+# any real palette, so only a hostile planted file can hit it.
+PALETTE_CAP_BYTES = 64 * 1024
+# Applied-log rotation (ticket 27, H8): one previous generation past 1 MiB —
+# far above anything a gate session produces, so rotation stays invisible to
+# the harnesses that read this file at real sizes.
+APPLIED_ROTATE_BYTES = 1024 * 1024
+
 WEB_DIR = pathlib.Path(__file__).parent / "web"
 CSS_FILE = WEB_DIR / "anki_theme.css"
 ENGINE_SCRIPT_NAME = "anki_theme_style"
@@ -98,6 +115,51 @@ REVIEW_TOOLBAR_COPY_MS = 300
 
 def _log(message: str) -> None:
     print(f"[anki_theme] {message}", flush=True)
+
+
+class PaletteTooLarge(OSError):
+    """The palette file exceeds ``PALETTE_CAP_BYTES`` and the read refused it.
+
+    An OSError on purpose: apply()'s callers already treat any failed palette
+    read as "log it and keep the last theming", so the refusal rides exactly
+    that path with no caller changes."""
+
+
+def read_palette_capped(path: pathlib.Path, cap: int) -> str:
+    """The file's text, read through a hard size cap (ticket 27, H7).
+
+    Bounded read from an open handle — never stat-then-read, because the
+    theme swap is rm+mv and the file can be replaced between a stat and the
+    read; the cap must bind to the bytes actually taken. Decodes UTF-8
+    unconditionally — TOML is UTF-8 by specification, so a non-UTF-8 locale
+    (where ``read_text()`` would decode by locale) must not turn palette
+    bytes into mojibake. Raises PaletteTooLarge over the cap, so nothing of
+    a hostile multi-GB file is ever held or parsed.
+    """
+    with open(path, "rb") as f:
+        blob = f.read(cap + 1)
+    if len(blob) > cap:
+        raise PaletteTooLarge(f"palette at {path} exceeds the {cap}-byte read cap")
+    return blob.decode("utf-8")
+
+
+def rotate_applied_log(log: pathlib.Path, threshold: int) -> bool:
+    """Rotate the applied log once it grows past ``threshold`` bytes
+    (ticket 27, H8): the current file becomes ``<name>.1`` via os.replace —
+    a single previous generation, overwritten atomically, never a ``.2``.
+
+    True when rotated, False when the log is absent or only at/under the
+    threshold. OSError propagates: the caller keeps this inside the record
+    guard, so a failed rotation can never break theming.
+    """
+    try:
+        size = log.stat().st_size
+    except FileNotFoundError:
+        return False
+    if size <= threshold:
+        return False
+    os.replace(log, log.with_name(log.name + ".1"))
+    return True
 
 
 class Runtime:
@@ -230,7 +292,14 @@ class Runtime:
         errors included), so state never advances past an unrecorded failure.
         """
         t0 = time.perf_counter()
-        text = PALETTE_FILE.read_text()
+        try:
+            text = read_palette_capped(PALETTE_FILE, PALETTE_CAP_BYTES)
+        except PaletteTooLarge:
+            # Same refusal path as an unreadable/invalid palette — the
+            # re-raise rides the callers' guards (startup log, watcher
+            # retry) — with the condition named plainly first.
+            _log(f"palette exceeds {PALETTE_CAP_BYTES // 1024} KiB — skipping apply")
+            raise
         palette, mode = load_raw(text)
         digest = fingerprint(palette, mode)
         if digest == self._digest:
@@ -538,6 +607,9 @@ class Runtime:
         )
         try:
             PLUGIN_STATE_DIR.mkdir(parents=True, exist_ok=True)
+            # Rotation rides the same guard (ticket 27, H8): a failed rotate
+            # lands in the except below with the append — observability only.
+            rotate_applied_log(APPLIED_LOG, APPLIED_ROTATE_BYTES)
             with APPLIED_LOG.open("a") as f:
                 f.write(json.dumps(record) + "\n")
         except OSError:

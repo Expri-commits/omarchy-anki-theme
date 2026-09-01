@@ -35,10 +35,24 @@ Item {
         }
     }
 
+    // The decision's exec is the only argv this file ever runs beyond the
+    // fixed gate command, so it is validated before use (H9): an array of
+    // strings or nothing runs. A decision failing the shape check lands in
+    // the same silence as an unparsable gate line — the warn is the whole
+    // action, the next start retries.
+    function isExecArgv(argv) {
+        return Array.isArray(argv) && argv.every((arg) => {
+            return typeof arg === "string";
+        });
+    }
+
     function act(decision) {
         console.log(`[anki_theme] gate: ${decision.action} — ${decision.message}`);
         // inert and idle fall through: the log line above is the whole action
-        if (decision.action === "sync") {
+        const acting = decision.action === "sync" || decision.action === "ask_consent" || decision.action === "offer_reinstall";
+        if (acting && !isExecArgv(decision.exec)) {
+            console.warn(`[anki_theme] gate: '${decision.action}' exec is not an argv array of strings — doing nothing`);
+        } else if (decision.action === "sync") {
             syncProc.command = decision.exec;
             syncProc.running = true;
         } else if (decision.action === "ask_consent" || decision.action === "offer_reinstall") {

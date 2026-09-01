@@ -10,11 +10,15 @@ this module must run both as ``anki_theme.sync`` inside Anki and as a bare
 script: no relative imports, no aqt, no caller assumptions.
 
 Stamp   sha256 over the bundled tree's sorted relative paths + file bytes
-        (``__pycache__`` dirs and ``*.pyc`` never hashed), recorded as
+        (``__pycache__``/``web`` dirs and ``*.pyc`` never hashed), recorded as
         ``payloadHash`` in the *installed* copy's ``payload.json`` — the
         bundled identity file never carries it, so the hash covers the whole
         bundle with no self-reference. Direction-agnostic: a downgrade
-        converges backward, because the plugin is the truth.
+        converges backward, because the plugin is the truth. The stamp is a
+        claim, not proof: the current leg re-hashes the installed tree modulo
+        the files that legitimately differ, so a same-uid writer's edit is
+        repaired by the next start (H6) instead of persisting until the next
+        payload change.
 
 Swap    stage the fresh tree to a unique dot-prefixed sibling of
         ``addons21`` (under the Anki2 root, outside the one directory Anki
@@ -60,8 +64,23 @@ PRODUCT = "anki_theme"
 STAGE_PREFIX = ".anki_theme-stage-"
 OLD_PREFIX = ".anki_theme-old-"
 
-HASH_SKIP_DIRS = frozenset({"__pycache__"})
+# Never hashed: dev-loop bytecode noise must not flap a comparison, and
+# ``web`` exists only in the installed tree — the runtime generates
+# ``web/anki_theme.css`` there (runtime.WEB_DIR), the bundle never carries
+# one, so skipping it leaves every stamp value unchanged and keeps the
+# generated CSS from reading as drift in the current leg's re-hash.
+HASH_SKIP_DIRS = frozenset({"__pycache__", "web"})
 HASH_SKIP_SUFFIXES = (".pyc",)
+
+# The current leg's divergence re-hash (H6) skips these relative paths on
+# both sides — ``_landable``'s "the one file that legitimately differs" idiom,
+# grown by one: only the installed ``payload.json`` carries the stamped
+# payloadHash, and only the installed ``meta.json`` carries the user's config
+# edits plus Anki-owned state (``disabled``). ``config.json`` is deliberately
+# compared: Anki's add-on docs give it one writer (the install itself) — it is
+# the defaults file, and ``writeConfig`` persists user edits into meta.json —
+# so a diverging copy is real drift, not a legitimate variant.
+CURRENT_SKIP_FILES = frozenset({"payload.json", "meta.json"})
 
 # The we-installed marker in the plugin state dir; the service's
 # reinstall-after-delete toast keys on its presence (ticket 12).
@@ -112,12 +131,17 @@ def _hashable(rel: Path) -> bool:
 def tree_hash(root: Path, skip: frozenset[str] = frozenset()) -> str:
     """Content hash of a payload tree: sorted relative paths + file bytes.
 
-    Skips what must never ship (``__pycache__``, ``*.pyc``) so dev-loop
-    bytecode noise cannot flap the stamp, plus the caller's relative POSIX
-    paths in ``skip`` — recovery's stage verification excludes the stamped
-    identity file, the one file a stage legitimately rewrites. Computed on
-    the *bundled* tree and, mid-recovery, on candidate stages; installed
-    trees are trusted via their stamp.
+    Skips the never-shipped (``__pycache__``, ``*.pyc``) and the
+    runtime-generated (``web/``, installed tree only) so dev-loop bytecode
+    noise and the generated CSS cannot flap a comparison, plus the caller's
+    relative POSIX paths in ``skip`` — recovery's stage verification excludes
+    the stamped identity file, the one file a stage legitimately rewrites,
+    and the current leg's divergence check (H6) excludes it and meta.json,
+    the two files an install legitimately rewrites. Computed on the *bundled*
+    tree, on candidate stages mid-recovery, and — modulo those two files — on
+    the installed tree in the current leg, whose stamp alone no longer
+    suffices: a same-uid writer's edit would otherwise persist until the next
+    payload change.
     """
     digest = hashlib.sha256()
     files = sorted(
@@ -441,8 +465,20 @@ def _ensure_current(
         detail = f"no payloadHash in {installed_dir / 'payload.json'} — not a synced install"
     else:
         if stamp["payloadHash"] == payload_hash:
-            _log(f"payload {payload_hash[:12]}… current")
-            return SyncResult(CURRENT, payload_hash=payload_hash)
+            # The stamp is a claim recorded in a writable file, so the tree it
+            # describes is re-verified here (H6): a same-uid writer's edit or
+            # bit-rot must not ride as CURRENT until the next payload change.
+            # The comparison skips the two legitimate variants (see
+            # CURRENT_SKIP_FILES) and everything HASH_SKIP_DIRS drops; a
+            # divergence takes the same _swap leg as a stamp drift, which
+            # converges — one swap rebuilds from the bundle, the next pass is
+            # CURRENT — so a tampered tree can never loop the boot.
+            if tree_hash(installed_dir, CURRENT_SKIP_FILES) == tree_hash(
+                bundled_dir, CURRENT_SKIP_FILES
+            ):
+                _log(f"payload {payload_hash[:12]}… current")
+                return SyncResult(CURRENT, payload_hash=payload_hash)
+            _log("installed tree diverges from bundle — swapping")
         return _swap(bundled_dir, installed_dir, state_dir, payload_hash, defer_old_cleanup)
     _log(f"refused: {detail}; leaving the folder alone")
     return SyncResult(REFUSED, detail)
