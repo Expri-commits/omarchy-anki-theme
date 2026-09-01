@@ -41,6 +41,9 @@ class PaletteError(ValueError):
 #   ("alpha", key, a)      palette hue under stock alpha `a`
 #   ("fg_accent",)         `bright_blue`, falling back to `blue` (rule 5)
 #   ("on_tint", key)       luminance-derived foreground on fill `key` (rule 3)
+#   ("on_tint_composite", key, a)
+#                          same, against `key` at stock alpha `a` composited
+#                          over `background` (rule 3 for translucent fills)
 type Rule = str | tuple[str, ...]
 
 VAR_RULES: dict[str, Rule] = {
@@ -55,7 +58,12 @@ VAR_RULES: dict[str, Rule] = {
     # Text
     "FG": "foreground",
     "FG_SUBTLE": "dark_foreground",
-    "FG_DISABLED": "dark_foreground",
+    # The disabled label reads on BUTTON_DISABLED — muted at stock 0.5 over
+    # the canvas (the characterized Add-window pill) — so it derives on-tint
+    # against that composite, like every other foreground-on-fill (residuals
+    # ledger row 7: dark_foreground verbatim rendered white's disabled
+    # buttons as blank pills, 1.0–2.7:1 across the stocks).
+    "FG_DISABLED": ("on_tint_composite", "muted", DISABLED_ALPHA),
     "FG_FAINT": "muted",
     "FG_LINK": ("fg_accent",),
     "SCROLLBAR_BG_HOVER": "dark_foreground",
@@ -215,6 +223,19 @@ def pick_on_tint(foreground: str, background: str, fill: str) -> str:
     return foreground if fg_ratio >= bg_ratio else background
 
 
+def composite_over(fill: str, alpha: float, over: str) -> str:
+    """`fill` at `alpha` composited over `over` — the color a stock
+    translucent aqt fill actually paints on an opaque surface beneath it.
+    """
+
+    def mix(top: int, bottom: int) -> int:
+        return round(top * alpha + bottom * (1 - alpha))
+
+    tr, tg, tb = _channels(fill)
+    br, bg_, bb = _channels(over)
+    return f"#{mix(tr, br):02x}{mix(tg, bg_):02x}{mix(tb, bb):02x}"
+
+
 def _fg_accent(palette: dict[str, str]) -> str | None:
     bright, plain = palette.get("bright_blue"), palette.get("blue")
     if bright is not None and bright != plain:
@@ -258,6 +279,29 @@ def _resolve(palette: dict[str, str], rule: Rule) -> tuple[str | None, tuple[str
             return None, missing
         assert foreground is not None and background is not None and fill is not None
         return pick_on_tint(foreground, background, fill), ()
+    if kind == "on_tint_composite":
+        _, fill_key, alpha = rule
+        foreground, background, fill = (
+            palette.get("foreground"),
+            palette.get("background"),
+            palette.get(fill_key),
+        )
+        missing = tuple(
+            name
+            for name, value in (
+                ("foreground", foreground),
+                ("background", background),
+                (fill_key, fill),
+            )
+            if value is None
+        )
+        if missing:
+            return None, missing
+        assert foreground is not None and background is not None and fill is not None
+        return (
+            pick_on_tint(foreground, background, composite_over(fill, alpha, background)),
+            (),
+        )
     raise ValueError(f"unknown rule kind: {kind!r}")
 
 

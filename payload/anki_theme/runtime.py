@@ -238,6 +238,7 @@ class Runtime:
             return False
 
         errors: list[str] = []
+        legs: dict[str, float] = {}
         dark = mode == "dark"
         # Anki's own re-style cost: a polarity flip makes apply_style()
         # re-polish every Qt widget (~60-90 ms observed) where a same-polarity
@@ -248,33 +249,46 @@ class Runtime:
         css = css_text(mapping)
         views = 0
 
+        def lap(name: str, since: float) -> None:
+            legs[name] = round((time.perf_counter() - since) * 1000, 1)
+
         # Leg 1 — Qt chrome (menubar, toolbar, dialogs) via Anki's own
         # pipeline. A failure here means the apply fundamentally failed:
         # abort unrecorded for the caller's retry rather than record a
         # half-truth.
+        t_leg = time.perf_counter()
         self._apply_qt_chrome(mapping, dark)
+        lap("qt_chrome", t_leg)
         # Legs 2–5 are web delivery: a failure in any of them must not abort
         # the others, the record, or Anki — it lands in the record instead.
+        t_leg = time.perf_counter()
         try:
             self._write_web_css(css)  # stdHtml page builds read this fresh
         except Exception:
             errors.append("web_css")
             _log(f"web css write failed:\n{traceback.format_exc()}")
+        lap("web_css", t_leg)
+        t_leg = time.perf_counter()
         try:
             self._refresh_engine_scripts(css)  # sveltekit pages
         except Exception:
             errors.append("engine_scripts")
             _log(f"engine script refresh failed:\n{traceback.format_exc()}")
+        lap("engine_scripts", t_leg)
+        t_leg = time.perf_counter()
         try:
             gui_hooks.theme_did_change()
         except Exception:
             errors.append("theme_did_change")
             _log(f"theme_did_change hook failed:\n{traceback.format_exc()}")
+        lap("theme_did_change", t_leg)
+        t_leg = time.perf_counter()
         try:
             views = self._restyle_open_pages(css)
         except Exception:
             errors.append("open_pages")
             _log(f"open-page restyle failed:\n{traceback.format_exc()}")
+        lap("open_pages", t_leg)
 
         self._seq += 1
         self._digest = digest
@@ -291,6 +305,10 @@ class Runtime:
                 "views": views,
                 "polarity_flip": polarity_flip,
                 "errors": errors,
+                # Per-leg costs, so the record decomposes the apply (the
+                # frame-diff cross-check showed applied_at trailing the
+                # visible flip — this names where the tail sits).
+                "leg_ms": legs,
                 "apply_ms": round((time.perf_counter() - t0) * 1000, 1),
                 "applied_at": time.time(),
             }
@@ -405,6 +423,17 @@ class Runtime:
                     # had been opened once (tier 3: 17 ms → 66 ms at 7 views).
                     # Hidden tabs of a *visible* window (the prefs sveltekit
                     # page) still eval — they never reload on tab switch.
+                    continue
+                if view.window() is mw and not view.isVisible():
+                    # A hidden child of the MAIN window can only be a
+                    # never-shown spare: mw's own webviews are visible in
+                    # every state and rebuild through will_set_content on
+                    # state changes. aqt 26.08's DeckStats leaks exactly
+                    # that on every open — the webview is parented to mw
+                    # (aqt/stats.py) and reject() only nulls the reference —
+                    # and evaling each leaked chart page cost ~50 ms on
+                    # every later apply (the full-matrix plateau grew to
+                    # ~1 s at 26 such views, ticket 25).
                     continue
                 view.eval(js)
                 restyled += 1

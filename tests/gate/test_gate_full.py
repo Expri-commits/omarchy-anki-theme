@@ -49,10 +49,13 @@ from pathological import MODES, P1, P2, P3, P4, P5  # noqa: E402
 from points import sample as _sample  # noqa: E402
 from sampling import TOLERANCE, Shot, channel_delta, contrast_ratio  # noqa: E402
 from test_gate import (  # noqa: E402
+    FRAME_INTERVAL_TOLERANCE_S,
+    STARTUP_APPLY_BUDGET_MS,
     assert_deck_and_menubar,
     assert_editor,
     assert_reviewer,
     assert_switch_record,
+    assert_timing,
     note_perf,
     perf_row,
 )
@@ -199,7 +202,7 @@ def assert_full_surfaces(session, oracle: ThemeOracle, label: str) -> None:
 
 def assert_pathological_record(
     record: dict, t_swap: float, oracle: ThemeOracle, adjustments: tuple, leg: str, session=None
-) -> None:
+) -> dict:
     """Like tier 2's record assert, but the clamp count must equal tier-1's
     pure prediction instead of zero."""
     where = f"pathological leg {leg!r}"
@@ -212,7 +215,9 @@ def assert_pathological_record(
         f"{where}: clamped {record['clamped']}, tier-1 predicted {len(adjustments)}"
     )
     assert record["dark"] == oracle.dark, f"{where}: polarity mismatch"
+    # Record before asserting (tier 2's rule): red runs keep their numbers.
     note_perf(session, perf_row(record, t_swap, leg))
+    assert_timing(record, t_swap, leg)
     assert record["engine_profiles"] >= 1, f"{where}: sveltekit leg dead"
     assert record["views"] >= 1, f"{where}: no open webview was restyled"
 
@@ -237,6 +242,9 @@ def test_startup_sanity(gate3_session):
     assert record is not None
     assert record["errors"] == [], f"startup apply errors: {record['errors']}"
     assert record["vars"] + record["skipped"] == len(VAR_RULES)
+    assert record["apply_ms"] <= STARTUP_APPLY_BUDGET_MS, (
+        f"startup apply {record['apply_ms']}ms over the {STARTUP_APPLY_BUDGET_MS:.0f}ms budget"
+    )
     note_perf(gate3_session, {"leg": "startup", "apply_ms": record["apply_ms"]})
 
 
@@ -338,16 +346,19 @@ def test_frame_diff_cross_check(gate3_session, add_window):
     f_gruv, f_catpp = flips_to_gruv[0], flips_to_catpp[0]
     interval_video = (f_catpp - f_gruv) / fps
     interval_records = record_b["applied_at"] - record_a["applied_at"]
-    # Interval agreement is recorded, not asserted (de-gated 2026-08-30, run
-    # 3): applied_at is stamped after ALL restyle legs finish, while the
-    # screen flips when the main webview repaints mid-loop — with the matrix
-    # session's open views that tail reached 0.8 s. A real disagreement to
-    # investigate belongs to the perf-polish ticket; the flips-exist and
-    # exactly-once asserts above carry the correctness claim.
-    print(
-        f"perf: flip interval on video {interval_video:.3f}s vs applied records "
-        f"{interval_records:.3f}s (delta {interval_video - interval_records:+.3f}s — "
-        "applied_at trails the visible flip by the remaining restyle legs)"
+    # Interval agreement, re-armed with the per-leg record (ticket 25): the
+    # two flips' applied_at difference must match the video's flip interval
+    # — the recorder's start offset cancels in both. With the restyle tail
+    # collapsed (hidden mw-children skipped) applied_at trails the visible
+    # flip by the open-pages leg only, and that tail cancels across the two
+    # flips; the tolerance covers the settle rule's frame quantization and
+    # load jitter. A real disagreement means a restyle leg is lying about
+    # when the screen flipped — investigate, don't widen.
+    assert abs(interval_video - interval_records) <= FRAME_INTERVAL_TOLERANCE_S, (
+        f"flip interval on video {interval_video:.3f}s vs applied records "
+        f"{interval_records:.3f}s (delta {interval_video - interval_records:+.3f}s "
+        f"> ±{FRAME_INTERVAL_TOLERANCE_S}s) — legs a {record_a.get('leg_ms')}, "
+        f"b {record_b.get('leg_ms')}"
     )
 
     first_ts = first_frame_timestamp(rec_path)

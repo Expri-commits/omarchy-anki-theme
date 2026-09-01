@@ -22,6 +22,16 @@ Commands (spec dict field ``cmd``):
   close_menu   close the popup
   set_clamp    flip the anki_theme ``contrast_clamp`` config through the real
                writeConfig + configUpdatedAction path the config dialog uses
+  census       dump every AnkiWebView the runtime's restyle walk would see —
+               the same topLevelWidgets/findChildren walk with the same
+               skip expression, one row per view (diagnoses view
+               accumulation; ticket 25's per-view cost thread)
+  plant_hidden_webview
+               create a never-shown LegacyStatsWebView parented to mw —
+               the exact artifact aqt's DeckStats leaks on every open
+               (aqt/stats.py: parents the webview to mw; reject() only
+               nulls the reference) — so the orphan-skip leg can prove
+               the walk ignores it
   probe        report widget/webview rects (and DOM probe results from the
                versioned sample map's JS) for a target surface — everything
                the pytest side needs to map sample points onto screenshots
@@ -52,8 +62,9 @@ from aqt.qt import (
     QTabWidget,
     QTimer,
     QWidget,
+    sip,
 )
-from aqt.webview import AnkiWebView
+from aqt.webview import AnkiWebView, LegacyStatsWebView
 
 CTL_DIR = pathlib.Path(os.environ["GATE_CTL_DIR"])
 DECK_NAME = "Gate"
@@ -144,6 +155,10 @@ def _execute(cmd_file: pathlib.Path, spec: dict) -> dict | None:
         return _close_menu()
     if name == "set_clamp":
         return _set_clamp(spec)
+    if name == "census":
+        return _census()
+    if name == "plant_hidden_webview":
+        return _plant_hidden_webview()
     if name == "qss":
         return _qss()
     if name == "probe":
@@ -413,6 +428,57 @@ def _close_dialog(kind: str) -> dict:
 
 
 # -- the menu popup ----------------------------------------------------------
+
+
+def _census() -> dict:
+    """The runtime's restyle walk, itemized: every AnkiWebView under every
+    top-level widget, with the fields the walk's skip expression sees. The
+    `would_eval` flag mirrors that expression verbatim (including the
+    hidden-child-of-main-window skip) — a census where it disagrees with the
+    runtime's "restyled N" log line is itself the finding."""
+    rows = []
+    for top in mw.app.topLevelWidgets():
+        for view in top.findChildren(AnkiWebView):
+            deleted = sip.isdeleted(view)
+            window = None if deleted else view.window()
+            window_visible = False if window is None else bool(window.isVisible())
+            view_visible = False if deleted else bool(view.isVisible())
+            win_is_mw = window is mw
+            rows.append(
+                {
+                    "view": type(view).__name__,
+                    "object_name": view.objectName() or None,
+                    "window": None if window is None else type(window).__name__,
+                    "window_title": "" if window is None else window.windowTitle(),
+                    "view_visible": view_visible,
+                    "window_visible": window_visible,
+                    "win_is_mw": win_is_mw,
+                    "size": f"{view.width()}x{view.height()}",
+                    "would_eval": (not deleted)
+                    and window_visible
+                    and not (win_is_mw and not view_visible),
+                }
+            )
+    return {
+        "ok": True,
+        "total": len(rows),
+        "would_eval": sum(1 for r in rows if r["would_eval"]),
+        "rows": rows,
+    }
+
+
+_planted: list[QWidget] = []
+
+
+def _plant_hidden_webview() -> dict:
+    """A never-shown LegacyStatsWebView parented to mw — the artifact aqt's
+    DeckStats leaks on every open. Kept module-level so it survives until the
+    process dies, exactly like the real leak."""
+    view = LegacyStatsWebView(mw)
+    view.setObjectName("gate_planted_hidden")
+    view.resize(100, 30)
+    _planted.append(view)
+    return {"ok": True, "planted": len(_planted)}
 
 
 def _qss() -> dict:

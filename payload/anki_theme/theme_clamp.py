@@ -12,6 +12,7 @@ Guarded relationships (floors as measured against all 22 stock palettes):
   foreground vs background, dark_background, darker_background   4.5 (min 5.30)
   link key (bright_blue, else blue) vs background                3.0 (min 3.06)
   on-tint text (SELECTED_FG, HIGHLIGHT_FG, on_accent) vs fill    3.0 (min 3.14)
+  disabled text (FG_DISABLED) vs its composited fill             3.0 (min 5.19)
 
 Verbatim by policy — never clamped: backgrounds (the user chose them; we
 adjust what reads, not what it reads on), subtle/faint text (stock sits
@@ -49,7 +50,14 @@ from __future__ import annotations
 import colorsys
 from dataclasses import dataclass, replace
 
-from anki_theme.palette import Mapping, contrast_ratio, map_palette, relative_luminance
+from anki_theme.palette import (
+    DISABLED_ALPHA,
+    Mapping,
+    composite_over,
+    contrast_ratio,
+    map_palette,
+    relative_luminance,
+)
 
 FG_FLOOR = 4.5
 LINK_FLOOR = 3.0
@@ -60,12 +68,15 @@ BLACK = "#000000"
 
 GUARDED_BACKGROUNDS = ("background", "dark_background", "darker_background")
 
-# Guard 3's slots: (mapping slot, palette fill key). "on_accent" is the
-# injected `.primary` rule's color (Mapping.on_accent), not an aqt var.
+# Guard 3's slots: (mapping slot, palette fill key, alpha — None for a raw
+# fill). "on_accent" is the injected `.primary` rule's color
+# (Mapping.on_accent), not an aqt var. FG_DISABLED's fill is the composited
+# disabled-button fill the mapping itself derives against (ledger row 7).
 ON_TINT_SLOTS = (
-    ("SELECTED_FG", "selection"),
-    ("HIGHLIGHT_FG", "selection"),
-    ("on_accent", "accent"),
+    ("SELECTED_FG", "selection", None),
+    ("HIGHLIGHT_FG", "selection", None),
+    ("on_accent", "accent", None),
+    ("FG_DISABLED", "muted", DISABLED_ALPHA),
 )
 
 # Scan resolution for the lightness nudge: 1/1024 steps cover the line
@@ -229,9 +240,12 @@ def clamp_on_tint(
     adjustments: list[Adjustment] = []
     vars_ = dict(mapping.vars)
     on_accent = mapping.on_accent
-    for slot, fill_key in ON_TINT_SLOTS:
+    for slot, fill_key, alpha in ON_TINT_SLOTS:
         value = on_accent if slot == "on_accent" else vars_.get(slot)
         fill = palette.get(fill_key)
+        if fill is not None and alpha is not None:
+            over = palette.get("background")
+            fill = fill if over is None else composite_over(fill, alpha, over)
         if value is None or fill is None:
             continue
         before = contrast_ratio(value, fill)
@@ -246,12 +260,15 @@ def clamp_on_tint(
             on_accent = best
         else:
             vars_[slot] = best
+        relationship = (
+            f"on {fill_key}" if alpha is None else f"on {fill_key}@{alpha:g} over background"
+        )
         adjustments.append(
             Adjustment(
                 key=slot,
                 old=value,
                 new=best,
-                relationship=f"on {fill_key}",
+                relationship=relationship,
                 floor=ON_TINT_FLOOR,
                 before=(before,),
                 after=(contrast_ratio(best, fill),),

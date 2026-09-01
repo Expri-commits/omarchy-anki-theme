@@ -109,6 +109,7 @@ def test_nudged_foreground_is_re_measured_by_the_on_tint_pass() -> None:
         "foreground",
         "SELECTED_FG",
         "HIGHLIGHT_FG",
+        "FG_DISABLED",
     ]
     for adjustment in adjustments[1:]:
         assert adjustment.old == nudged  # the locked pick was the nudged fg
@@ -221,6 +222,29 @@ def test_clamp_on_tint_rewrites_only_the_failing_slots() -> None:
     assert len(adjustments) == 3
 
 
+def test_fg_disabled_extends_candidates_on_a_straddling_composite() -> None:
+    """Ledger row 7's guard (ticket 25): a palette whose fg/bg both
+    straddle the muted composite — no on-tint pick reads on it, so the
+    post-pass extends to the extremes (black wins on a mid-gray fill)."""
+    hostile = base_palette(
+        foreground="#8a8a8a",
+        background="#767676",
+        muted="#808080",
+        selection="#1a1a1a",
+        accent="#1a1a1a",
+        blue="#1a1a1a",
+        bright_blue="#1a1a1a",
+    )
+    locked = map_palette(hostile)
+    composite = "#7b7b7b"  # muted@0.5 over background
+    assert contrast_ratio(locked.vars["FG_DISABLED"], composite) < ON_TINT_FLOOR
+    clamped, adjustments = clamp_on_tint(locked, hostile)
+    (adjustment,) = [a for a in adjustments if a.key == "FG_DISABLED"]
+    assert adjustment.new == BLACK
+    assert adjustment.relationship == "on muted@0.5 over background"
+    assert clamped.vars["FG_DISABLED"] == BLACK
+
+
 # P4 / P5 — infeasible backgrounds: max-min foreground + the honest log.
 
 
@@ -305,11 +329,13 @@ def test_faithful_mode_adjusts_nothing() -> None:
 
 
 def test_map_with_clamp_reports_every_adjustment_once() -> None:
-    # P1 triggers one guard; each adjustment is reported exactly once, with
-    # the mapping built from the clamped palette.
+    # P1 triggers guard 1, and its nudged foreground then misses the 3.0
+    # bar on the muted composite — the chained FG_DISABLED extension rides
+    # along; each adjustment is reported exactly once, with the mapping
+    # built from the clamped palette.
     result = clamp_palette(P1)
     mapping, adjustments = map_with_clamp(P1, True)
-    assert adjustments == result.adjustments
+    assert [a.key for a in adjustments] == ["foreground", "FG_DISABLED"]
+    assert len({a.key for a in adjustments}) == len(adjustments)
     assert mapping.vars["FG"] == result.palette["foreground"]
-    keys = [a.key for a in adjustments]
-    assert len(keys) == len(set(keys))
+    assert mapping.vars["FG_DISABLED"] == "#ffffff"

@@ -8,8 +8,10 @@ import re
 
 import pytest
 from anki_theme.palette import (
+    DISABLED_ALPHA,
     VAR_NAMES,
     PaletteError,
+    composite_over,
     contrast_ratio,
     fingerprint,
     load_palette,
@@ -141,6 +143,43 @@ def test_on_tint_is_luminance_derived_not_polarity() -> None:
     # (7.8:1) over the light foreground (1.5:1) — the luminance rule, where
     # Anki's hardcoded white measures below the AA bar.
     assert m_dark.on_accent == "#1e1e2e"
+
+
+def test_fg_disabled_reads_on_the_composited_disabled_fill() -> None:
+    """Ledger row 7 (ticket 25): the disabled-button label derives on-tint
+    against BUTTON_DISABLED's composite — muted@0.5 over the canvas — not
+    `dark_foreground` verbatim (which rendered white's disabled buttons as
+    blank pills and sat at 1.0–2.7:1 across the stocks)."""
+    # The row-7 case itself: black on the near-gray pill, 11.5:1.
+    m_white = map_palette(theme_palette("white"))
+    assert m_white.vars["FG_DISABLED"] == "#000000"
+    # Dark stocks pick their light foreground — the dark_foreground
+    # neighborhood the sweep saw no complaint in.
+    assert map_palette(theme_palette("catppuccin")).vars["FG_DISABLED"] == "#cdd6f4"
+    # The composite IS the anchor: ethereal's raw muted is light enough that
+    # a raw-fill pick would take its dark background, but muted@0.5 over its
+    # near-black canvas is dark — the light foreground wins (6.6:1).
+    assert map_palette(theme_palette("ethereal")).vars["FG_DISABLED"] == "#ffcead"
+
+
+@pytest.mark.parametrize("theme", THEMES)
+def test_fg_disabled_clears_the_on_tint_floor_on_its_composite(theme: str) -> None:
+    """Every stock's derived disabled label reads on its own composited
+    fill — the slot's guaranteed minimum, stock bar 5.19:1."""
+    palette = theme_palette(theme)
+    mapping = map_palette(palette)
+    fill = composite_over(palette["muted"], DISABLED_ALPHA, palette["background"])
+    assert contrast_ratio(mapping.vars["FG_DISABLED"], fill) >= 3.0
+
+
+def test_fg_disabled_degrades_with_its_keys() -> None:
+    # muted gone: FG_DISABLED rides it (plus its old consumers).
+    no_muted = {k: v for k, v in full_palette().items() if k != "muted"}
+    mapping = map_palette(no_muted)
+    assert ("FG_DISABLED", ("muted",)) in mapping.skipped
+    # The composite needs the canvas too — degrade, never invent.
+    no_bg = {k: v for k, v in full_palette().items() if k != "background"}
+    assert ("FG_DISABLED", ("background",)) in map_palette(no_bg).skipped
 
 
 def test_pick_on_tint_follows_contrast_not_argument_position() -> None:

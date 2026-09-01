@@ -41,7 +41,9 @@ residuals ledger the gate is responsible for closing. Vocabulary per
   the full 25-key → 51-var + `--bs-*` table; missing-key degradation (the
   `white` theme: `FLAG_2`/`STATE_BURIED`/`FLAG_7` stay stock); `bright_blue`
   fallback to `blue`; alpha rules (glass 0.4, disabled/selection 0.5); the
-  on-tint luminance rule.
+  on-tint luminance rule, including `FG_DISABLED`'s derivation against the
+  composited disabled fill (residuals row 7's remedy) and its guard-3
+  extension on hostile palettes.
 - **Clamp** — zero adjustments across all 22 stock palettes (the
   stock-invisibility regression ticket 08 requires: floors must stay invisible
   as Omarchy adds themes); synthetic pathological palettes P1–P5 (below) hit
@@ -96,6 +98,10 @@ for debugging.
   switch and the captures — deck canvas + menubar and the still-open Add
   window (no page rebuild) must be pixel-exact, and the run's timings must
   sit inside the thresholds below.
+- **The orphan-skip leg** (ticket 25): a planted never-shown
+  `LegacyStatsWebView` under the main window — aqt's DeckStats leak
+  reproduced — must not change the restyled-view count (the census command
+  itemizes the walk); hidden views of other windows still eval.
 - **One polarity flip mid-review** (Latte → Catppuccin with the reviewer
   showing, ticket 26): the flat top toolbar's body wears an *inline copy* of
   the reviewer page's computed background (`aqt` `TopWebView
@@ -199,28 +205,49 @@ original oracle guesses that aqt's own CSS contradicts are marked.
 | 8 | Toast + tooltip | `dark_background` / `foreground` (overlay semantics, ticket 07) — **joins when the mechanism lands** (ledger row 1) |
 | 9 | Below-floor no-op renders | characterized Anki defaults |
 
-## Thresholds (recorded on every live run — not asserted)
+## Thresholds (asserted on every live run)
 
-**De-gated 2026-08-30 by user directive**: after three gate sessions whose
-failure sets were dominated by timing (apply cost grows with open views and is
-session-variable, 150–260 ms at the matrix plateau), timing asserts became
-**record-only** — numbers land in each run's artifacts
-(`perf-switch-records.jsonl`, the perf-session and frame-diff JSON) and in the
-perf log's session rows; they cannot fail a run. The bounds below stay as the
-recorded reference for what healthy looked like; re-asserting them (with
-recalibrated values or per-view scaling) is the first act of the perf-polish
-ticket once correctness is green.
+**Re-armed 2026-09-01 (ticket 25)**, split by ownership. History: de-gated
+2026-08-30 (correctness first) when three gate sessions' failure sets were
+dominated by timing; ticket 25's census diagnosis then decomposed the
+full-matrix plateau (~1 s applies at the tail) into two aqt-side causes
+the per-leg record now separates:
 
-| Bound | Healthy range | Grounding |
+- **a leaked webview our walk was evaling** — aqt 26.08's DeckStats
+  parents its webview to the main window and never deletes it (aqt/stats.py
+  constructs `LegacyStatsWebView(self.mw)`; `reject()` only nulls the
+  reference), so every stats open strands a never-shown chart page there.
+  Fixed on our side: the restyle walk skips hidden children of the main
+  window (mw's own webviews are visible in every state and rebuild through
+  `will_set_content`; hidden views of other windows — open dialogs' inactive
+  tabs — still eval). Proven red/green by tier 2's orphan-skip leg, which
+  plants the leak's exact artifact.
+- **a widget tree that grows with dialog use** — every Preferences open
+  leaks a whole hidden dialog window (aqt's deleteLater GC notwithstanding)
+  and each stats open adds its spare to the tree, so aqt's own
+  `_apply_style` re-polish — the `qt_chrome` leg — grows with it: 11 ms at
+  session start to ~900 ms over a 22-theme matrix, all of it Anki's
+  pipeline recoloring Qt chrome. Not ours to skip (it is the only live
+  Qt-chrome recolor path) or fix (aqt's widget lifecycle); the totals
+  legitimately scale with session length on this build.
+
+So the asserts split by ownership: **the delivery legs the add-on owns get
+tight budgets on every switch; the apply total gets a session-scale runaway
+bound** — one number must not gate both a 4-view tier-2 session and a
+22-theme matrix tail. The bounds live in `tests/gate/test_gate.py`
+(`*_BUDGET_MS`/`FRAME_INTERVAL_TOLERANCE_S`); every run still records its
+raw timings into its artifacts (`perf-switch-records.jsonl` with the
+per-leg breakdown, the perf-session and frame-diff JSON) for the perf log —
+recorded *before* the asserts so a red run keeps every leg's numbers.
+
+| Bound | Asserted budget | Observed family (2026-09-01 tree) |
 | --- | --- | --- |
-| In-app apply (palette read, post-debounce → all four delivery legs done) | 12.6–14.8 ms short-session; 150–260 ms at the full-matrix plateau | ticket 09 spike + perf log 2026-08-30; two additive costs: aqt's `_apply_style()` re-polishes every Qt widget on a polarity flip (~60–115 ms), and the restyle loop pays per open webview (up to 7 restyled views in the matrix session) — per-view cost investigation deferred to the perf-polish ticket |
-| State-dir swap → applied record (all delivery legs done, open-page evals included) | completes before `omarchy theme set` returns in short sessions; the flip + session-scale view count ride the same window (150 ms debounce + apply + jitter) | ticket 09; the frame-diff cross-check asserts the recolor **shows on screen exactly once per switch** (correctness) and *records* the video-vs-records interval delta — applied_at trails the visible flip by the remaining restyle legs (0.8 s at the matrix session's view count, run 3) |
-| Startup single-run sanity (the apply; the sync check rides unmeasured at import) | 4.3 ms apply, ~10-file tree walk (startup restyles only the 3 launch views) | ticket 22 |
-
-The flip split keyed off a `polarity_flip` field the applied record carries
-(ticket 23): when the polish ticket re-arms assertions, same-polarity switches
-get tight bounds and dark↔light flips their own — one slow population must not
-loosen the threshold the standing metric asserts.
+| `open_pages` (restyle walk + evals) | 100 ms | 0.2–10.3 ms @ 4 views (the walk grows mildly with the dead-dialog tree) |
+| `web_css` / `engine_scripts` / `theme_did_change` | 25 / 25 / 50 ms | ≤1.5 / ≤0.3 / ≤1.8 ms |
+| In-app apply total (incl. aqt's `qt_chrome`) | 1500 ms — runaway bound | 11.9–16.7 ms tier-2 sessions; grows to ~900 ms at the 22-theme matrix tail with the widget tree (aqt-side, recorded per-leg) |
+| State-dir swap → applied record | 2.0 s | 0.19–0.77 s observed (150 ms debounce + apply + 5 ms poll granularity) |
+| Startup apply | 100 ms | 3.9–4.8 ms |
+| Frame-diff flip-interval agreement (tier 3) | ±0.35 s | the per-leg record names any tail; the interval's tails cancel across its two flips |
 
 The in-app apply bound starts at the **post-debounce palette read** — ticket
 09's measured interval. The watcher's 150 ms debounce + digest guard run before
@@ -237,8 +264,7 @@ Standing-metric **sessions** (defined methods, ≥5-run means) append to the per
 log; tier-2/3 runs **record** their switch timings into the run artifacts and
 append only their session entries — a deliberate interpretation of the
 append-every-measurement rule so the log records method-consistent numbers,
-not per-run noise. Timing cannot fail a run (the 2026-08-30 de-gating above);
-the perf-polish ticket restores assertions once recalibrated.
+not per-run noise.
 
 ## Residuals ledger
 
@@ -250,7 +276,7 @@ the perf-polish ticket restores assertions once recalibrated.
 | 4 | Link floor checked against `background` only — elevated-surface link contrast unobserved | ticket 08 mechanics 5 | **Closed (ticket 23 sweep)**: deck-name link + nav/pill labels legible on their elevated rows in all 22 stock themes, including the near-monochrome ones (white, matte-black, vantablack, solitude, retro-82). Hostile gate palettes can still floor out on elevated rows (p1/p2/p3 unreadable "Gate" link) — floors are defined against `background`; stock bar met, recorded as the known envelope |
 | 5 | Stats chart colors uncharacterized | ticket 14 | **Closed (ticket 23)**: first tier-3 run characterized them — first series = `STATE_NEW` (aqt's theme) drawn by flot at fill 0.7 over the page canvas; oracle blends at 0.7, verified δ2. Locked in `tests/gate/oracles.py` (`stats_added_bar`) |
 | 6 | Light-mode stats page background renders as stale GPU-tile noise | ticket 23, characterized 2026-08-30 (run-2 artifacts + vision sweep) | QtWebEngine leaves the light-polarity page's background tiles unrendered — pixel-identical noise across different palettes (97% byte-equal latte vs flexoki), while glyphs, series and the bottom chrome paint themed and the DOM-computed `body_bg` carries the themed canvas. Dark paints flat and exact. Gate: page-bg pixel assert is dark-only, light asserts `body_bg` from the probe; revisit on any Anki/Qt bump (tier-3 trigger) — if the artifact is gone, restore the pixel assert for both polarities |
-| 7 | Monochrome palettes collide with Anki's disabled/faint text roles | ticket 23 sweep | **white**: the Add window's disabled History button renders a blank pill — `FG_DISABLED` ← `dark_foreground` (`#c0c0c0`) on a `#c1c1c1`-measured fill (pixel-verified: interior darkest luminance == fill; nord/catppuccin show 165+ spread on the same regions). Cosmetic-class companions: faint zero-count digits in last-horizon/solitude/vantablack, white's Learn count in neutral gray. Palette-authored colors under the locked mapping — candidate remedy for the polish ticket: derive `FG_DISABLED` on-tint against the `BUTTON_DISABLED` composite. Not a flip blocker |
+| 7 | Monochrome palettes collide with Anki's disabled/faint text roles | ticket 23 sweep | **Closed (ticket 25)**: `FG_DISABLED` now derives on-tint against the **composited disabled fill** (`muted`@0.5 over `background`, the characterized Add-window pill) instead of `dark_foreground` verbatim — the old slot sat at 1.0–2.7:1 across the stocks (white's blank disabled pill); the derived label clears 5.19:1 on every stock (tier-1 sweep) and guard 3 extends its candidates on hostile palettes. The faint-count companions (faint zero-count digits etc.) stay palette-authored by policy — verbatim `muted`/`dark_foreground` slots the sweep never flagged as colliding fills |
 
 ## Infrastructure notes
 
