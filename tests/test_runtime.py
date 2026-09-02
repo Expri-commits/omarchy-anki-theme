@@ -67,7 +67,7 @@ def test_palette_read_accepts_a_normal_palette(tmp_path: Path) -> None:
     path = tmp_path / "colors.toml"
     text = 'mode = "dark"\nbg = "#1d2021"\nfg = "#fbf1c7"\n'
     path.write_text(text)
-    assert module.read_palette_capped(path, module.PALETTE_CAP_BYTES) == text
+    assert module.read_palette_capped(path) == text
 
 
 def test_palette_read_accepts_exactly_the_cap(tmp_path: Path) -> None:
@@ -78,7 +78,7 @@ def test_palette_read_accepts_exactly_the_cap(tmp_path: Path) -> None:
     path = tmp_path / "colors.toml"
     path.write_bytes(text.encode("utf-8"))
     assert path.stat().st_size == module.PALETTE_CAP_BYTES
-    assert module.read_palette_capped(path, module.PALETTE_CAP_BYTES) == text
+    assert module.read_palette_capped(path) == text
 
 
 def test_palette_read_refuses_over_the_cap(tmp_path: Path) -> None:
@@ -88,32 +88,29 @@ def test_palette_read_refuses_over_the_cap(tmp_path: Path) -> None:
     path = tmp_path / "colors.toml"
     path.write_bytes(b"x" * (module.PALETTE_CAP_BYTES + 1))
     with pytest.raises(module.PaletteTooLarge):
-        module.read_palette_capped(path, module.PALETTE_CAP_BYTES)
+        module.read_palette_capped(path)
 
 
 def test_palette_decode_matches_read_text(tmp_path: Path) -> None:
     module = runtime()
     path = tmp_path / "colors.toml"
     path.write_bytes('fg = "#fbf1c7"  # größe\n'.encode())
-    assert module.read_palette_capped(path, module.PALETTE_CAP_BYTES) == path.read_text()
+    assert module.read_palette_capped(path) == path.read_text()
 
 
 def test_apply_refuses_oversize_on_the_unreadable_palette_path(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Over-cap palette: one plain log line names the condition, then the
-    refusal escapes apply() exactly as any unreadable palette would — the
-    callers' guards log it and keep the last theming; nothing reaches CSS."""
+    """Over-cap palette: the read's refusal escapes apply() exactly as any
+    unreadable palette would — the callers' guards log the traceback (whose
+    message names the cap) and keep the last theming; nothing reaches CSS."""
     module = runtime()
     over = tmp_path / "colors.toml"
     over.write_bytes(b"x" * (module.PALETTE_CAP_BYTES + 1))
     monkeypatch.setattr(module, "PALETTE_FILE", over)
     with pytest.raises(module.PaletteTooLarge):
         module.runtime.apply("test")
-    expected = f"palette exceeds {module.PALETTE_CAP_BYTES // 1024} KiB — skipping apply"
-    assert expected in capsys.readouterr().out
 
 
 # -- H8: the applied-log rotation --------------------------------------------------
@@ -124,7 +121,7 @@ def test_rotation_past_the_threshold_keeps_one_generation(tmp_path: Path) -> Non
     log = tmp_path / "applied.jsonl"
     grown = "x" * (module.APPLIED_ROTATE_BYTES + 1)
     log.write_text(grown)
-    assert module.rotate_applied_log(log, module.APPLIED_ROTATE_BYTES) is True
+    assert module.rotate_applied_log(log) is True
     assert not log.exists()
     assert (tmp_path / "applied.jsonl.1").read_text() == grown
     assert not (tmp_path / "applied.jsonl.2").exists()
@@ -136,16 +133,16 @@ def test_rotation_replaces_a_preexisting_generation(tmp_path: Path) -> None:
     (tmp_path / "applied.jsonl.1").write_text("old generation\n")
     fresh = "new generation\n" + "x" * module.APPLIED_ROTATE_BYTES
     log.write_text(fresh)
-    assert module.rotate_applied_log(log, module.APPLIED_ROTATE_BYTES) is True
+    assert module.rotate_applied_log(log) is True
     assert (tmp_path / "applied.jsonl.1").read_text() == fresh
 
 
 def test_rotation_skips_absent_at_and_under_the_threshold(tmp_path: Path) -> None:
     module = runtime()
     log = tmp_path / "applied.jsonl"
-    assert module.rotate_applied_log(log, module.APPLIED_ROTATE_BYTES) is False
+    assert module.rotate_applied_log(log) is False
     log.write_text("x" * module.APPLIED_ROTATE_BYTES)  # exactly at: exceeds is strict
-    assert module.rotate_applied_log(log, module.APPLIED_ROTATE_BYTES) is False
+    assert module.rotate_applied_log(log) is False
     assert log.exists() and not (tmp_path / "applied.jsonl.1").exists()
 
 
@@ -158,7 +155,7 @@ def test_rotation_failure_raises_in_the_helper_for_the_guard(tmp_path: Path) -> 
     log.write_text("x" * (module.APPLIED_ROTATE_BYTES + 1))
     (tmp_path / "applied.jsonl.1").mkdir()
     with pytest.raises(OSError):
-        module.rotate_applied_log(log, module.APPLIED_ROTATE_BYTES)
+        module.rotate_applied_log(log)
 
 
 def test_record_apply_rotates_then_appends(

@@ -125,7 +125,7 @@ class PaletteTooLarge(OSError):
     that path with no caller changes."""
 
 
-def read_palette_capped(path: pathlib.Path, cap: int) -> str:
+def read_palette_capped(path: pathlib.Path) -> str:
     """The file's text, read through a hard size cap (ticket 27, H7).
 
     Bounded read from an open handle — never stat-then-read, because the
@@ -133,18 +133,18 @@ def read_palette_capped(path: pathlib.Path, cap: int) -> str:
     read; the cap must bind to the bytes actually taken. Decodes UTF-8
     unconditionally — TOML is UTF-8 by specification, so a non-UTF-8 locale
     (where ``read_text()`` would decode by locale) must not turn palette
-    bytes into mojibake. Raises PaletteTooLarge over the cap, so nothing of
-    a hostile multi-GB file is ever held or parsed.
+    bytes into mojibake. Raises PaletteTooLarge past ``PALETTE_CAP_BYTES``,
+    so nothing of a hostile multi-GB file is ever held or parsed.
     """
     with open(path, "rb") as f:
-        blob = f.read(cap + 1)
-    if len(blob) > cap:
-        raise PaletteTooLarge(f"palette at {path} exceeds the {cap}-byte read cap")
+        blob = f.read(PALETTE_CAP_BYTES + 1)
+    if len(blob) > PALETTE_CAP_BYTES:
+        raise PaletteTooLarge(f"palette at {path} exceeds the {PALETTE_CAP_BYTES}-byte read cap")
     return blob.decode("utf-8")
 
 
-def rotate_applied_log(log: pathlib.Path, threshold: int) -> bool:
-    """Rotate the applied log once it grows past ``threshold`` bytes
+def rotate_applied_log(log: pathlib.Path) -> bool:
+    """Rotate the applied log once it grows past ``APPLIED_ROTATE_BYTES``
     (ticket 27, H8): the current file becomes ``<name>.1`` via os.replace —
     a single previous generation, overwritten atomically, never a ``.2``.
 
@@ -156,7 +156,7 @@ def rotate_applied_log(log: pathlib.Path, threshold: int) -> bool:
         size = log.stat().st_size
     except FileNotFoundError:
         return False
-    if size <= threshold:
+    if size <= APPLIED_ROTATE_BYTES:
         return False
     os.replace(log, log.with_name(log.name + ".1"))
     return True
@@ -292,14 +292,7 @@ class Runtime:
         errors included), so state never advances past an unrecorded failure.
         """
         t0 = time.perf_counter()
-        try:
-            text = read_palette_capped(PALETTE_FILE, PALETTE_CAP_BYTES)
-        except PaletteTooLarge:
-            # Same refusal path as an unreadable/invalid palette — the
-            # re-raise rides the callers' guards (startup log, watcher
-            # retry) — with the condition named plainly first.
-            _log(f"palette exceeds {PALETTE_CAP_BYTES // 1024} KiB — skipping apply")
-            raise
+        text = read_palette_capped(PALETTE_FILE)
         palette, mode = load_raw(text)
         digest = fingerprint(palette, mode)
         if digest == self._digest:
@@ -609,7 +602,7 @@ class Runtime:
             PLUGIN_STATE_DIR.mkdir(parents=True, exist_ok=True)
             # Rotation rides the same guard (ticket 27, H8): a failed rotate
             # lands in the except below with the append — observability only.
-            rotate_applied_log(APPLIED_LOG, APPLIED_ROTATE_BYTES)
+            rotate_applied_log(APPLIED_LOG)
             with APPLIED_LOG.open("a") as f:
                 f.write(json.dumps(record) + "\n")
         except OSError:

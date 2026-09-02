@@ -228,21 +228,23 @@ def _live_owner(entry: Path) -> bool:
     return True
 
 
-def _complete(stage: Path) -> bool:
-    """A tree stamped as ours — schema, product, and a string payloadHash,
-    the same gate the installed-tree check applies. For a stage this
-    attests the copy finished (the stamp file is written last, see
-    ``_build_stage``); for a dot-old it attests the tree is a former
-    installed dir rather than planted debris. Attests, not proves: a
+def _complete(stage: Path) -> dict | None:
+    """The tree's stamp when it reads as ours — schema, product, and a string
+    payloadHash, the same gate the installed-tree check applies — else None.
+    For a stage this attests the copy finished (the stamp file is written
+    last, see ``_build_stage``); for a dot-old it attests the tree is a
+    former installed dir rather than planted debris. Attests, not proves: a
     well-formed stamp is writable by the same-uid planter, which is why
     stages must additionally match the bundle's bytes (``_landable``)."""
     stamp = read_stamp(stage)
-    return (
+    if (
         stamp is not None
         and stamp.get("schema") == SCHEMA
         and stamp.get("product") == PRODUCT
         and isinstance(stamp.get("payloadHash"), str)
-    )
+    ):
+        return stamp
+    return None
 
 
 def _landable(stage: Path, bundled_dir: Path) -> bool:
@@ -260,9 +262,7 @@ def _landable(stage: Path, bundled_dir: Path) -> bool:
     So nothing is landable there. Unreadable candidates count as not
     landable, never as errors: recovery sweeps and converges instead of
     raising past the bootloader's fail-open contract."""
-    if not _complete(stage):
-        return False
-    stamp = read_stamp(stage)
+    stamp = _complete(stage)
     if stamp is None:
         return False
     try:

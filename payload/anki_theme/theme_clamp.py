@@ -53,6 +53,7 @@ from dataclasses import dataclass, replace
 from anki_theme.palette import (
     DISABLED_ALPHA,
     Mapping,
+    _channels,
     composite_over,
     contrast_ratio,
     map_palette,
@@ -119,14 +120,6 @@ class Adjustment:
         return text
 
 
-@dataclass(frozen=True)
-class ClampResult:
-    """clamp_palette's product: the (possibly) adjusted palette + its log."""
-
-    palette: dict[str, str]
-    adjustments: tuple[Adjustment, ...]
-
-
 def _from_hls(hue: float, sat: float, lightness: float) -> str:
     r, g, b = (round(c * 255) for c in colorsys.hls_to_rgb(hue, lightness, sat))
     return f"#{r:02x}{g:02x}{b:02x}"
@@ -142,7 +135,7 @@ def _nudge(color: str, fills: tuple[str, ...], floor: float) -> tuple[str, bool]
     is the per-fill bound guaranteeing a single fill always has a valid
     point; only jointly-hostile fills can force the fallback.
     """
-    r, g, b = int(color[1:3], 16), int(color[3:5], 16), int(color[5:7], 16)
+    r, g, b = _channels(color)
     hue, lightness, sat = colorsys.rgb_to_hls(r / 255, g / 255, b / 255)
     # Luminances hoisted out of the scan: each step measures the one
     # candidate luminance against cached fill values.
@@ -169,12 +162,12 @@ def _nudge(color: str, fills: tuple[str, ...], floor: float) -> tuple[str, bool]
     return best_min[2], True
 
 
-def clamp_palette(palette: dict[str, str]) -> ClampResult:
+def clamp_palette(palette: dict[str, str]) -> tuple[dict[str, str], tuple[Adjustment, ...]]:
     """Guards 1–2: nudge `foreground` and the link key toward their floors.
 
-    Missing keys leave their guard silent — a palette without a key
-    degrades exactly per the mapping's missing-key policy, and the clamp
-    never invents one.
+    Returns the (possibly) adjusted palette and its adjustment log. Missing
+    keys leave their guard silent — a palette without a key degrades exactly
+    per the mapping's missing-key policy, and the clamp never invents one.
     """
     adjusted = dict(palette)
     adjustments: list[Adjustment] = []
@@ -224,7 +217,7 @@ def clamp_palette(palette: dict[str, str]) -> ClampResult:
                     )
                 )
 
-    return ClampResult(adjusted, tuple(adjustments))
+    return adjusted, tuple(adjustments)
 
 
 def clamp_on_tint(
@@ -254,8 +247,6 @@ def clamp_on_tint(
         candidates = [c for c in (palette.get("foreground"), palette.get("background")) if c]
         candidates += [WHITE, BLACK]
         best = max(candidates, key=lambda c: contrast_ratio(c, fill))
-        if best == value:  # unreachable: `value` failed, best clears 4.58:1
-            continue
         if slot == "on_accent":
             on_accent = best
         else:
@@ -288,6 +279,6 @@ def map_with_clamp(
     """
     if not clamp_enabled:
         return map_palette(palette), ()
-    result = clamp_palette(palette)
-    mapping, on_tint = clamp_on_tint(map_palette(result.palette), result.palette)
-    return mapping, result.adjustments + on_tint
+    clamped, adjustments = clamp_palette(palette)
+    mapping, on_tint = clamp_on_tint(map_palette(clamped), clamped)
+    return mapping, adjustments + on_tint

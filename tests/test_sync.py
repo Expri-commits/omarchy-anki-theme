@@ -28,7 +28,6 @@ REAL_PAYLOAD = REPO / "payload" / "anki_theme"
 IDENTITY = {
     "schema": 1,
     "product": "anki_theme",
-    "pluginId": "io.github.expri-commits.anki-theme",
     "version": "0.1.0",
 }
 

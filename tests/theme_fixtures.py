@@ -6,11 +6,11 @@ so test modules import it as a top-level module.
 
 from pathlib import Path
 
-from anki_theme.palette import load_palette
+from anki_theme.palette import load_raw
 
 THEMES_DIR = Path(__file__).parent / "fixtures" / "themes"
 THEMES = sorted(p.name for p in THEMES_DIR.iterdir() if p.is_dir())
 
 
 def theme_palette(name: str) -> dict[str, str]:
-    return load_palette((THEMES_DIR / name / "colors.toml").read_text())
+    return load_raw((THEMES_DIR / name / "colors.toml").read_text())[0]

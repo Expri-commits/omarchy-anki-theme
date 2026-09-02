@@ -14,7 +14,7 @@ from anki_theme.palette import (
     composite_over,
     contrast_ratio,
     fingerprint,
-    load_palette,
+    load_raw,
     map_palette,
     pick_on_tint,
     relative_luminance,
@@ -233,16 +233,16 @@ def test_malformed_value_degrades_like_an_absent_key() -> None:
         .read_text()
         .replace('selection = "#45475a"', 'selection = "sparkly"')
     )
-    palette = load_palette(text)
+    palette = load_raw(text)[0]
     assert "selection" not in palette
     assert map_palette(palette).skipped[0] == ("BORDER_SUBTLE", ("selection",))
 
 
 def test_malformed_toml_raises() -> None:
     with pytest.raises(PaletteError):
-        load_palette("accent = ")
+        load_raw("accent = ")
     with pytest.raises(PaletteError):
-        load_palette("[unterminated")
+        load_raw("[unterminated")
 
 
 def test_contrast_ratio_known_values() -> None:
@@ -257,8 +257,8 @@ def test_fingerprint_stable_across_formatting_and_ignored_keys() -> None:
     palette = {"background": "#111111", "foreground": "#eeeeee"}
     assert fingerprint(palette, "dark") == fingerprint(dict(palette), "dark")
     # Same palette content, different formatting/extra non-color keys.
-    a = load_palette('background = "#111111"\nforeground = "#eeeeee"\nmode = "dark"')
-    b = load_palette('foreground="#eeeeee"\nbackground="#111111"\nmode="dark"\n')
+    a = load_raw('background = "#111111"\nforeground = "#eeeeee"\nmode = "dark"')[0]
+    b = load_raw('foreground="#eeeeee"\nbackground="#111111"\nmode="dark"\n')[0]
     assert fingerprint(a, "dark") == fingerprint(b, "dark")
 
 

@@ -153,10 +153,12 @@ class Mapping:
 def load_raw(text: str) -> tuple[dict[str, str], str | None]:
     """Parse colors.toml text into `(palette, mode)` in one pass.
 
-    The palette keeps only `#rrggbb` values (see `load_palette`); `mode` rides
-    alongside for the runtime's night_mode choice — the mapping itself never
-    consults it (ticket 07's polarity-agnostic rule). Malformed TOML raises
-    PaletteError.
+    The palette keeps only `#rrggbb` values — `mode` and any key whose value
+    is not `#rrggbb` (non-color config such as `hyprland_active_border`) are
+    dropped from it, so a consumed-but-malformed key degrades exactly like an
+    absent one. `mode` rides alongside for the runtime's night_mode choice —
+    the mapping itself never consults it (ticket 07's polarity-agnostic
+    rule). Malformed TOML raises PaletteError.
     """
     try:
         raw = tomllib.loads(text)
@@ -168,16 +170,6 @@ def load_raw(text: str) -> tuple[dict[str, str], str | None]:
             palette[key] = match.group(0)
     mode = raw.get("mode")
     return palette, mode if isinstance(mode, str) else None
-
-
-def load_palette(text: str) -> dict[str, str]:
-    """Parse colors.toml text into `{key: "#rrggbb"}`.
-
-    `mode` and any key whose value is not `#rrggbb` (non-color config such as
-    `hyprland_active_border`) are ignored; a consumed key dropped here
-    degrades exactly like an absent one. Malformed TOML raises PaletteError.
-    """
-    return load_raw(text)[0]
 
 
 def fingerprint(palette: dict[str, str], mode: str | None) -> str:
@@ -259,8 +251,8 @@ def _resolve(palette: dict[str, str], rule: Rule) -> tuple[str | None, tuple[str
     if kind == "fg_accent":
         value = _fg_accent(palette)
         return value, () if value is not None else ("bright_blue", "blue")
-    if kind == "on_tint":
-        _, fill_key = rule
+    if kind in ("on_tint", "on_tint_composite"):
+        fill_key = rule[1]
         foreground, background, fill = (
             palette.get("foreground"),
             palette.get("background"),
@@ -278,30 +270,9 @@ def _resolve(palette: dict[str, str], rule: Rule) -> tuple[str | None, tuple[str
         if missing:
             return None, missing
         assert foreground is not None and background is not None and fill is not None
+        if kind == "on_tint_composite":
+            fill = composite_over(fill, rule[2], background)
         return pick_on_tint(foreground, background, fill), ()
-    if kind == "on_tint_composite":
-        _, fill_key, alpha = rule
-        foreground, background, fill = (
-            palette.get("foreground"),
-            palette.get("background"),
-            palette.get(fill_key),
-        )
-        missing = tuple(
-            name
-            for name, value in (
-                ("foreground", foreground),
-                ("background", background),
-                (fill_key, fill),
-            )
-            if value is None
-        )
-        if missing:
-            return None, missing
-        assert foreground is not None and background is not None and fill is not None
-        return (
-            pick_on_tint(foreground, background, composite_over(fill, alpha, background)),
-            (),
-        )
     raise ValueError(f"unknown rule kind: {kind!r}")
 
 
