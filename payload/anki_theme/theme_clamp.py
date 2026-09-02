@@ -53,7 +53,7 @@ from dataclasses import dataclass, replace
 from anki_theme.palette import (
     DISABLED_ALPHA,
     Mapping,
-    _channels,
+    channels,
     composite_over,
     contrast_ratio,
     map_palette,
@@ -135,7 +135,7 @@ def _nudge(color: str, fills: tuple[str, ...], floor: float) -> tuple[str, bool]
     is the per-fill bound guaranteeing a single fill always has a valid
     point; only jointly-hostile fills can force the fallback.
     """
-    r, g, b = _channels(color)
+    r, g, b = channels(color)
     hue, lightness, sat = colorsys.rgb_to_hls(r / 255, g / 255, b / 255)
     # Luminances hoisted out of the scan: each step measures the one
     # candidate luminance against cached fill values.

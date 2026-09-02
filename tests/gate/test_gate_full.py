@@ -468,7 +468,7 @@ def test_p2_link_lands_in_delivered_css(gate3_session, add_window, p_themes):
 
     session = gate3_session
     palette = PATHOLOGICAL["anki_theme-gate-p2"][0]
-    clamped = clamp_palette(palette)[0]
+    clamped, _ = clamp_palette(palette)
     assert clamped["bright_blue"] != palette["bright_blue"], (
         "tier-1 predicted a link adjustment for P2 — the fixture moved"
     )

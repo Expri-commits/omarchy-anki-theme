@@ -55,7 +55,7 @@ def test_stock_palette_clamps_nothing(theme: str) -> None:
 
 
 def test_healthy_base_clamps_nothing() -> None:
-    assert clamp_palette(palette())[1] == ()
+    assert clamp_palette(palette()) == (palette(), ())
     mapping, adjustments = map_with_clamp(palette(), True)
     assert adjustments == ()
     assert mapping == map_palette(palette())
@@ -88,11 +88,11 @@ def test_p1_foreground_lifted_to_the_4_5_floor() -> None:
 
 
 def test_p1_log_line_carries_key_old_new_ratios_floor() -> None:
-    (adjustment,) = clamp_palette(P1)[1]
+    clamped, (adjustment,) = clamp_palette(P1)
     line = adjustment.line()
     assert "foreground" in line
     assert P1["foreground"] in line
-    assert clamp_palette(P1)[0]["foreground"] in line
+    assert clamped["foreground"] in line
     assert "@4.5" in line
     assert "vs background/dark_background/darker_background" in line
     assert "→" in line
@@ -102,8 +102,9 @@ def test_nudged_foreground_is_re_measured_by_the_on_tint_pass() -> None:
     """The chain: guard 1 lifts the foreground, and guard 3 then evaluates
     the on-tint picks *of the clamped palette* — the nudged value is the
     candidate that fails and gets replaced."""
-    assert len(clamp_palette(CHAIN)[1]) == 1
-    nudged = clamp_palette(CHAIN)[0]["foreground"]
+    clamped, adjustments = clamp_palette(CHAIN)
+    assert len(adjustments) == 1
+    nudged = clamped["foreground"]
     mapping, adjustments = map_with_clamp(CHAIN, True)
     assert [a.key for a in adjustments] == [
         "foreground",
@@ -181,7 +182,7 @@ def test_link_key_choice_keeps_flags_verbatim_when_possible() -> None:
 
 def test_p3_mid_luminance_fill_extends_on_tint_candidates() -> None:
     # The pre-pass guards are all satisfied — P3 isolates guard 3.
-    assert clamp_palette(P3)[1] == ()
+    assert clamp_palette(P3) == (P3, ())
     fill = P3["selection"]
     locked_pick = map_palette(P3).vars["SELECTED_FG"]
     assert contrast_ratio(locked_pick, fill) < ON_TINT_FLOOR
@@ -268,10 +269,10 @@ def test_infeasible_backgrounds_take_max_min_foreground(fixture: dict) -> None:
 def test_p4_p5_max_min_points() -> None:
     # Analytic max-min values: P4 balances #d0d0d0/#303030 ≈ 2.92; P5
     # balances #595959/#ffffff ≈ 2.65 (both computed from the WCAG formula).
-    p4 = clamp_palette(P4)[1][0].after
-    assert 2.8 <= min(p4) <= 3.05
-    p5 = clamp_palette(P5)[1][0].after
-    assert 2.5 <= min(p5) <= 2.75
+    _, (p4,) = clamp_palette(P4)
+    assert 2.8 <= min(p4.after) <= 3.05
+    _, (p5,) = clamp_palette(P5)
+    assert 2.5 <= min(p5.after) <= 2.75
 
 
 # Termination — the per-fill bound.
@@ -300,12 +301,12 @@ def test_mid_gray_on_mid_gray_terminates_at_the_dark_extreme() -> None:
 
 
 def test_missing_keys_leave_their_guards_silent() -> None:
-    assert clamp_palette({})[1] == ()
-    assert clamp_palette({"foreground": "#808080"})[0] == {"foreground": "#808080"}
+    assert clamp_palette({}) == ({}, ())
+    assert clamp_palette({"foreground": "#808080"}) == ({"foreground": "#808080"}, ())
     # Link guard silent without a background to measure against.
     no_bg = palette(blue="#eeeeee", bright_blue="#eeeeee")
     del no_bg["background"]
-    assert clamp_palette(no_bg)[1] == ()
+    assert clamp_palette(no_bg) == (no_bg, ())
     # Degraded on-tint slots (no fill) are skipped by the post-pass.
     mapping, adjustments = map_with_clamp({"foreground": "#d0d0d0"}, True)
     assert adjustments == ()

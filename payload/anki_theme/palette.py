@@ -183,14 +183,14 @@ def fingerprint(palette: dict[str, str], mode: str | None) -> str:
     return hashlib.sha256(payload.encode()).hexdigest()[:16]
 
 
-def _channels(color: str) -> tuple[int, int, int]:
+def channels(color: str) -> tuple[int, int, int]:
     return int(color[1:3], 16), int(color[3:5], 16), int(color[5:7], 16)
 
 
 def relative_luminance(color: str) -> float:
     """WCAG 2.x relative luminance of a `#rrggbb` color."""
     linear = []
-    for channel in _channels(color):
+    for channel in channels(color):
         s = channel / 255
         linear.append(s / 12.92 if s <= 0.03928 else ((s + 0.055) / 1.055) ** 2.4)
     return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
@@ -223,8 +223,8 @@ def composite_over(fill: str, alpha: float, over: str) -> str:
     def mix(top: int, bottom: int) -> int:
         return round(top * alpha + bottom * (1 - alpha))
 
-    tr, tg, tb = _channels(fill)
-    br, bg_, bb = _channels(over)
+    tr, tg, tb = channels(fill)
+    br, bg_, bb = channels(over)
     return f"#{mix(tr, br):02x}{mix(tg, bg_):02x}{mix(tb, bb):02x}"
 
 
@@ -246,7 +246,7 @@ def _resolve(palette: dict[str, str], rule: Rule) -> tuple[str | None, tuple[str
         value = palette.get(key)
         if value is None:
             return None, (key,)
-        r, g, b = _channels(value)
+        r, g, b = channels(value)
         return f"rgba({r}, {g}, {b}, {alpha})", ()
     if kind == "fg_accent":
         value = _fg_accent(palette)
