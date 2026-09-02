@@ -88,6 +88,14 @@ def python_argv(script: Path, *args: Path | str) -> list[str]:
     return [PYTHON, "-B", str(script), *(str(a) for a in args)]
 
 
+def usage_error() -> int:
+    """The one usage line both service entry points print on a wrong
+    argument count (audit ticket 31) — ``sys.argv[0]`` names the helper,
+    so each main keeps its own filename in the line."""
+    print(f"usage: {Path(sys.argv[0]).name} <anki2_root> <state_dir>", file=sys.stderr)
+    return 2
+
+
 def parse_version(text: str) -> tuple[int, int, int] | None:
     """The version triple a ``omarchy-version`` line carries, or None.
 
@@ -244,8 +252,7 @@ def decide(
 def main(argv: list[str]) -> int:
     """``gate.py <anki2_root> <state_dir>`` — one decision JSON line."""
     if len(argv) != 2:
-        print(f"usage: {Path(sys.argv[0]).name} <anki2_root> <state_dir>", file=sys.stderr)
-        return 2
+        return usage_error()
     anki2_root, state_dir = Path(argv[0]), Path(argv[1])
     version, version_detail = run_version_cmd()
     decision = decide(

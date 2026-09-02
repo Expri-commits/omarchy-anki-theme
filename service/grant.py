@@ -34,7 +34,7 @@ import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
-from gate import ADDON_SEGMENT, CONSENT_FILE, python_argv
+from gate import ADDON_SEGMENT, CONSENT_FILE, python_argv, usage_error
 
 SYNC_TIMEOUT_S = 120.0
 
@@ -103,8 +103,7 @@ def main(argv: list[str]) -> int:
     stderr, mirroring the gate and the sync CLI.
     """
     if len(argv) != 2:
-        print(f"usage: {Path(sys.argv[0]).name} <anki2_root> <state_dir>", file=sys.stderr)
-        return 2
+        return usage_error()
     anki2_root, state_dir = Path(argv[0]), Path(argv[1])
     canonical = canonical_state_dir()
     if state_dir.resolve() != canonical:

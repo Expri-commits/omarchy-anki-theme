@@ -53,8 +53,9 @@ Item {
         if (acting && !isExecArgv(decision.exec)) {
             console.warn(`[anki_theme] gate: '${decision.action}' exec is not an argv array of strings — doing nothing`);
         } else if (decision.action === "sync") {
-            syncProc.command = decision.exec;
-            syncProc.running = true;
+            execProc.tag = "service sync";
+            execProc.command = decision.exec;
+            execProc.running = true;
         } else if (decision.action === "ask_consent" || decision.action === "offer_reinstall") {
             askDialog.present(decision.toast, decision.exec);
         }
@@ -95,45 +96,38 @@ Item {
 
     }
 
+    // Both actors run a decision's exec argv through this one Process
+    // (audit ticket 31): the gate's sync mount and the dialog's Allow are
+    // mutually exclusive by decision branch, so one block serves both.
+    // The launch sets `tag`, and the journal prefixes and exit warnings
+    // below key off it — the two legs stay exactly as distinguishable in
+    // the journal as the two dedicated Processes were. The Allow argv is
+    // the decision's own (grant helper for consent, Sync for reinstall);
+    // a crash mid-run is safe downstream — consent lands atomically
+    // inside grant.py before any install, and an unfinished converge is
+    // exactly what the next service start's gate decision completes.
     Process {
-        id: syncProc
+        id: execProc
+
+        property string tag: "service sync"
+        // What a nonzero exit means, per leg.
+        readonly property var exitNotes: ({
+            "service sync": "next start retries",
+            "allow": "the ask repeats at the next service start"
+        })
 
         onExited: (exitCode) => {
             if (exitCode !== 0)
-                console.warn(`[anki_theme] service sync: exited ${exitCode} — next start retries`);
+                console.warn(`[anki_theme] ${execProc.tag}: exited ${exitCode} — ${execProc.exitNotes[execProc.tag]}`);
 
         }
 
         stdout: StdioCollector {
-            onStreamFinished: root.relay(this.text, "[anki_theme] service sync: ", false)
+            onStreamFinished: root.relay(this.text, `[anki_theme] ${execProc.tag}: `, false)
         }
 
         stderr: StdioCollector {
-            onStreamFinished: root.relay(this.text, "[anki_theme] service sync log: ", false)
-        }
-
-    }
-
-    // The dialog's Allow: the decision's exec argv (grant helper for
-    // consent, Sync for reinstall). A crash mid-run is safe downstream —
-    // consent lands atomically inside grant.py before any install, and an
-    // unfinished converge is exactly what the next service start's gate
-    // decision completes.
-    Process {
-        id: allowProc
-
-        onExited: (exitCode) => {
-            if (exitCode !== 0)
-                console.warn(`[anki_theme] allow: exited ${exitCode} — the ask repeats at the next service start`);
-
-        }
-
-        stdout: StdioCollector {
-            onStreamFinished: root.relay(this.text, "[anki_theme] allow: ", false)
-        }
-
-        stderr: StdioCollector {
-            onStreamFinished: root.relay(this.text, "[anki_theme] allow log: ", false)
+            onStreamFinished: root.relay(this.text, `[anki_theme] ${execProc.tag} log: `, false)
         }
 
     }
@@ -164,8 +158,9 @@ Item {
         }
 
         function allow() {
-            allowProc.command = allowArgv;
-            allowProc.running = true;
+            execProc.tag = "allow";
+            execProc.command = allowArgv;
+            execProc.running = true;
             visible = false;
         }
 
