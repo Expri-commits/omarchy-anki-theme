@@ -59,37 +59,32 @@ def _menu_anchor_rect(probe: dict, surface: str, point_name: str, spec: dict) ->
     return 0, 0, menu["rect"][2], menu["rect"][3]
 
 
+def _qt_anchor_rect(probe: dict, surface: str, point_name: str, spec: dict) -> tuple:
+    """The rect a Qt-anchored point resolves to: the menubar, a named menubar
+    action, or a generic probe["qt"][<key>] rect (e.g. the native prefs
+    dialog's tab widget — _prefs_qt_rects)."""
+    anchor = spec["anchor"]
+    if anchor == "qt.menubar":
+        return tuple(probe["qt"]["menubar"])
+    if anchor == "qt.action":
+        return tuple(_menubar_action_rect(probe, surface, point_name, spec["action"]))
+    key = anchor.removeprefix("qt.")
+    try:
+        x, y, w, h = probe["qt"][key]
+    except KeyError, ValueError, TypeError:
+        raise AssertionError(f"{surface}/{point_name}: no qt rect {anchor!r} in probe") from None
+    return x, y, w, h
+
+
 def window_xy(session, probe: dict, surface: str, point_name: str) -> tuple[float, float]:
     spec = session.map["points"][surface][point_name]
     if spec["view"] == "qt":
-        anchor = spec["anchor"]
-        if anchor == "qt.menubar":
-            x, y, w, h = probe["qt"]["menubar"]
-        elif anchor == "qt.action":
-            x, y, w, h = _menubar_action_rect(probe, surface, point_name, spec["action"])
-        else:
-            # Generic Qt anchor: probe["qt"][<key>] carries the rect (e.g. the
-            # native prefs dialog's tab widget — _prefs_qt_rects).
-            key = anchor.removeprefix("qt.")
-            try:
-                x, y, w, h = probe["qt"][key]
-            except KeyError, ValueError, TypeError:
-                raise AssertionError(
-                    f"{surface}/{point_name}: no qt rect {anchor!r} in probe"
-                ) from None
-        return (
-            x + w * spec.get("fx", 0.5) + spec.get("dx", 0),
-            y + h * spec.get("fy", 0.5) + spec.get("dy", 0),
-        )
-    if spec["view"] == "menu":
+        x, y, w, h = _qt_anchor_rect(probe, surface, point_name, spec)
+    elif spec["view"] == "menu":
         # The gate add-on's open-menu report: the popup's own geometry, captured
         # as a global rect shot — so menu points are menu-local with no window
         # offset applied (the shot *is* the menu).
         x, y, w, h = _menu_anchor_rect(probe, surface, point_name, spec)
-        return (
-            x + w * spec.get("fx", 0.5) + spec.get("dx", 0),
-            y + h * spec.get("fy", 0.5) + spec.get("dy", 0),
-        )
     else:
         view = spec["view"]
         d = dom(probe, view)
@@ -103,7 +98,11 @@ def window_xy(session, probe: dict, surface: str, point_name: str) -> tuple[floa
         else:
             x = vx + (vw / dpr) * spec.get("fx", 0.5)
             y = vy + (vh / dpr) * spec.get("fy", 0.5)
-    return x, y
+        return x, y
+    return (
+        x + w * spec.get("fx", 0.5) + spec.get("dx", 0),
+        y + h * spec.get("fy", 0.5) + spec.get("dy", 0),
+    )
 
 
 def point(session, probe: dict, surface: str, point_name: str, shot: Shot) -> tuple[int, int]:
@@ -122,13 +121,7 @@ def scan_region(
     anchor for focus rings (the ring is the element's border)."""
     spec = session.map["points"][surface][point_name]
     if spec["view"] == "qt":
-        anchor = spec["anchor"]
-        if anchor == "qt.menubar":
-            x, y, w, h = probe["qt"]["menubar"]
-        elif anchor == "qt.action":
-            x, y, w, h = _menubar_action_rect(probe, surface, point_name, spec["action"])
-        else:
-            x, y, w, h = probe["qt"][anchor.removeprefix("qt.")]
+        x, y, w, h = _qt_anchor_rect(probe, surface, point_name, spec)
         dx, dy = shot_offset(session, probe, shot)
     elif spec["view"] == "menu":
         # Menu-local action rect inside the popup's own region shot.

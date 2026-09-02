@@ -30,22 +30,18 @@ import pathlib
 import shutil
 import statistics
 import subprocess
-import sys
 import time
 
 import pytest
-
-GATE_DIR = pathlib.Path(__file__).resolve().parent
-sys.path.insert(0, str(GATE_DIR))
-sys.path.insert(0, str(GATE_DIR.parent))
-
-from anki_theme import sync  # noqa: E402
-from points import sample as _sample  # noqa: E402
-from smoke_live_switch import seed_base  # noqa: E402
-from smoke_sync_bootloader import make_bundled, stop  # noqa: E402
+from anki_theme import sync
+from gate_harness import ctl_roundtrip, read_applied, wait_applied
+from points import sample as _sample
+from smoke_live_switch import seed_base
+from smoke_sync_bootloader import make_bundled, stop
 
 pytestmark = pytest.mark.gate_full
 
+GATE_DIR = pathlib.Path(__file__).resolve().parent
 REPO = GATE_DIR.parent.parent
 PAYLOAD = REPO / "payload" / "anki_theme"
 SERVICE_GATE = REPO / "service" / "gate.py"
@@ -95,23 +91,21 @@ def launch(base: pathlib.Path, log: pathlib.Path, env_extra: dict):
     )
 
 
-def applied_records(home: pathlib.Path) -> list[dict]:
-    path = home / ".local/state/omarchy/anki-theme/applied.jsonl"
-    try:
-        lines = path.read_text().splitlines()
-    except OSError:
-        return []
-    return [json.loads(line) for line in lines if line.strip()]
+# Where an instance launched on a scratch HOME writes its applied records
+# (the runtime derives its state dir from $HOME).
+LEG_APPLIED_LOG = ".local/state/omarchy/anki-theme/applied.jsonl"
 
 
-def wait_applied(home: pathlib.Path, t_launch: float, timeout_s: float, what: str) -> dict:
-    deadline = time.monotonic() + timeout_s
-    while time.monotonic() < deadline:
-        for record in reversed(applied_records(home)):
-            if record["reason"] == "startup" and record["applied_at"] > t_launch:
-                return record
-        time.sleep(0.1)
-    raise TimeoutError(f"no applied record for {what} within {timeout_s:.0f}s")
+def wait_startup(home: pathlib.Path, t_launch: float, timeout_s: float, what: str) -> dict:
+    """The legs' one applied-record wait: the startup apply of an instance
+    launched at `t_launch` on this scratch home (gate_harness's free
+    wait_applied with the legs' fixed predicate)."""
+    return wait_applied(
+        home / LEG_APPLIED_LOG,
+        lambda r: r["reason"] == "startup" and r["applied_at"] > t_launch,
+        timeout_s,
+        what,
+    )
 
 
 def log_text(log: pathlib.Path) -> str:
@@ -196,7 +190,7 @@ def test_propagation_drift_converges_at_boot(gate3_down, leg_home):
         {"HOME": str(leg_home), "ANKI_THEME_BUNDLED_PAYLOAD": str(bundled_v2)},
     )
     try:
-        record = wait_applied(leg_home, t_launch, STARTUP_TIMEOUT_S, "the drifted boot")
+        record = wait_startup(leg_home, t_launch, STARTUP_TIMEOUT_S, "the drifted boot")
         assert record["errors"] == [], f"drifted boot apply errors: {record['errors']}"
         text = log_text(anki_log)
         assert "[anki_theme-v2]" in text, "the v2 marker never ran — old code themed"
@@ -267,7 +261,7 @@ def test_propagation_race_stays_convergent(gate3_down, leg_home):
         decision = json.loads(mount.stdout.strip().splitlines()[-1])
         assert decision["status"] in (sync.SWAPPED, sync.CURRENT, sync.INSTALLED), decision
 
-        record = wait_applied(leg_home, t_launch, STARTUP_TIMEOUT_S, "the raced boot")
+        record = wait_startup(leg_home, t_launch, STARTUP_TIMEOUT_S, "the raced boot")
         assert record["errors"] == [], f"raced boot apply errors: {record['errors']}"
     finally:
         stop(proc)
@@ -304,7 +298,7 @@ def test_propagation_downgrade_converges_backward(gate3_down, leg_home):
         {"HOME": str(leg_home), "ANKI_THEME_BUNDLED_PAYLOAD": str(bundled_v1)},
     )
     try:
-        record = wait_applied(leg_home, t_launch, STARTUP_TIMEOUT_S, "the downgrade boot")
+        record = wait_startup(leg_home, t_launch, STARTUP_TIMEOUT_S, "the downgrade boot")
         assert record["errors"] == [], f"downgrade boot apply errors: {record['errors']}"
         text = log_text(anki_log)
         assert "sync: swapped to payload" in text, "the downgrade swap never happened"
@@ -406,17 +400,12 @@ def test_below_floor_addon_applies_nothing(gate3_down, gate3_session, leg_home, 
     t_launch = time.time()
     proc = launch(scratch / "base", anki_log, env)
     try:
-        hello = ctl / "000-hello.cmd"
-        hello.write_text(json.dumps({"cmd": "hello"}))
-        deadline = time.monotonic() + STARTUP_TIMEOUT_S
-        while time.monotonic() < deadline:
-            if (ctl / "000-hello.done").exists():
-                break
+
+        def alive() -> None:
             if proc.poll() is not None:
-                raise AssertionError("Anki exited before hello")
-            time.sleep(0.2)
-        else:
-            raise AssertionError("the gate add-on never answered hello")
+                raise AssertionError("Anki exited before answering a gate command")
+
+        ctl_roundtrip(ctl, 0, "hello", timeout=STARTUP_TIMEOUT_S, alive=alive, fail_log=anki_log)
 
         needle = (
             "no palette at"
@@ -424,9 +413,9 @@ def test_below_floor_addon_applies_nothing(gate3_down, gate3_session, leg_home, 
             else "startup apply crashed — Anki keeps its own theming"
         )
         wait_log_line(anki_log, needle, proc, 60.0)
-        assert not [r for r in applied_records(leg_home) if r["applied_at"] > t_launch], (
-            "an applied record landed despite the missing palette"
-        )
+        assert not [
+            r for r in read_applied(leg_home / LEG_APPLIED_LOG) if r["applied_at"] > t_launch
+        ], "an applied record landed despite the missing palette"
 
         # Deck canvas against Anki's own defaults — read live from aqt.colors
         # in this process, never remembered hexes (the inert add-on leaves
@@ -434,13 +423,15 @@ def test_below_floor_addon_applies_nothing(gate3_down, gate3_session, leg_home, 
         sample_map = json.loads((DATA_DIR / "26.08.1" / "sample_points.json").read_text())
         deck_spec = sample_map["probes"]["deck"]
         js = (DATA_DIR / "26.08.1" / deck_spec["js"]).read_text()
-        probe_cmd = ctl / "001-probe.cmd"
-        probe_cmd.write_text(json.dumps({"cmd": "probe", "target": "main", "js": js}))
-        deadline = time.monotonic() + 60.0
-        while time.monotonic() < deadline and not (ctl / "001-probe.done").exists():
-            time.sleep(0.2)
-        result = json.loads((ctl / "001-probe.done").read_text())
-        assert result["ok"], result
+        result = ctl_roundtrip(
+            ctl,
+            1,
+            "probe",
+            {"target": "main", "js": js},
+            timeout=60.0,
+            alive=alive,
+            fail_log=anki_log,
+        )
         (gate3_session.run_dir / f"probe-below-floor-{palette}.json").write_text(
             json.dumps(result, indent=1)
         )
@@ -567,7 +558,7 @@ def test_standalone_theming_continues(gate3_down, leg_home):
         {"HOME": str(leg_home), "ANKI_THEME_BUNDLED_PAYLOAD": str(scratch / "gone")},
     )
     try:
-        record = wait_applied(leg_home, t_launch, STARTUP_TIMEOUT_S, "the standalone boot")
+        record = wait_startup(leg_home, t_launch, STARTUP_TIMEOUT_S, "the standalone boot")
         assert record["errors"] == [], f"standalone apply errors: {record['errors']}"
         assert "standalone" in log_text(anki_log), "the standalone decision was never logged"
         after = json.loads((installed / "payload.json").read_text())["payloadHash"]
@@ -605,7 +596,7 @@ def test_drift_retract_surfaces_once(gate3_down, leg_home):
     t_launch = time.time()
     proc = launch(base, anki_log, env)
     try:
-        wait_applied(leg_home, t_launch, STARTUP_TIMEOUT_S, "the drifted start")
+        wait_startup(leg_home, t_launch, STARTUP_TIMEOUT_S, "the drifted start")
         text = log_text(anki_log)
         assert "aqt color vars drifted from the snapshot" in text, text[-2000:]
         assert "retracted 1 (CANVAS_INSET)" in text, text[-2000:]
@@ -622,7 +613,7 @@ def test_drift_retract_surfaces_once(gate3_down, leg_home):
     t_launch = time.time()
     proc = launch(base, anki_log, env)
     try:
-        wait_applied(leg_home, t_launch, STARTUP_TIMEOUT_S, "the dedup start")
+        wait_startup(leg_home, t_launch, STARTUP_TIMEOUT_S, "the dedup start")
         text = log_text(anki_log)
         assert "signature already surfaced — tooltip skipped" in text, text[-2000:]
     finally:
@@ -659,7 +650,7 @@ def test_drift_add_is_log_only(gate3_down, leg_home):
     t_launch = time.time()
     proc = launch(base, anki_log, env)
     try:
-        wait_applied(leg_home, t_launch, STARTUP_TIMEOUT_S, "the add-drift start")
+        wait_startup(leg_home, t_launch, STARTUP_TIMEOUT_S, "the add-drift start")
         text = log_text(anki_log)
         assert "aqt color vars drifted from the snapshot" in text, text[-2000:]
         assert "added 1 (ANKI_THEME_GATE_EXTRA)" in text, text[-2000:]

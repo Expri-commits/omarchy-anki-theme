@@ -50,10 +50,9 @@ PAYLOAD = REPO / "payload" / "anki_theme"
 sys.path.insert(0, str(REPO / "payload"))
 sys.path.insert(0, str(REPO / "tests"))
 from anki_theme import sync  # noqa: E402
-from smoke_live_switch import seed_base  # noqa: E402
+from smoke_live_switch import check, fail, seed_base, wait_for  # noqa: E402
 
 STATE_DIR = pathlib.Path.home() / ".local/state/omarchy/anki-theme"
-APPLIED_LOG = STATE_DIR / "applied.jsonl"
 STARTUP_TIMEOUT_S = 240.0
 LAUNCH_TIMEOUT_S = 120.0
 USER_META = {
@@ -73,33 +72,6 @@ PROBE = (
     "            f.write(f'{time.time()}\\n')\n"
     "    gui_hooks.profile_did_open.append(_mark)\n"
 )
-
-
-def fail(message: str) -> None:
-    print(f"FAIL: {message}")
-
-
-def check(ok: bool, message: str) -> None:
-    if not ok:
-        raise AssertionError(message)
-
-
-def applied_records() -> list[dict]:
-    try:
-        lines = APPLIED_LOG.read_text().splitlines()
-    except OSError:
-        return []
-    return [json.loads(line) for line in lines if line.strip()]
-
-
-def wait_for(predicate, timeout_s: float, what: str) -> dict:
-    deadline = time.monotonic() + timeout_s
-    while time.monotonic() < deadline:
-        for record in reversed(applied_records()):
-            if predicate(record):
-                return record
-        time.sleep(0.1)
-    raise TimeoutError(f"no applied record {what} within {timeout_s:.0f}s")
 
 
 def make_bundled(scratch: pathlib.Path, marker: str | None) -> pathlib.Path:

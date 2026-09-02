@@ -33,31 +33,21 @@ from __future__ import annotations
 
 import base64
 import json
-import sys
 import time
-from pathlib import Path
 
 import pytest
-
-GATE_DIR = Path(__file__).resolve().parent
-sys.path.insert(0, str(GATE_DIR))
-
-from anki_theme.palette import VAR_RULES  # noqa: E402
-from anki_theme.theme_clamp import clamp_palette, map_with_clamp  # noqa: E402
-from oracles import ThemeOracle, rgb  # noqa: E402
-from pathological import MODES, P1, P2, P3, P4, P5  # noqa: E402
-from points import sample as _sample  # noqa: E402
-from sampling import TOLERANCE, Shot, channel_delta, contrast_ratio  # noqa: E402
-from test_gate import (  # noqa: E402
+from anki_theme.theme_clamp import clamp_palette, map_with_clamp
+from oracles import ThemeOracle, rgb
+from pathological import MODES, P1, P2, P3, P4, P5
+from points import sample as _sample
+from sampling import TOLERANCE, Shot, channel_delta, contrast_ratio
+from test_gate import (
     FRAME_INTERVAL_TOLERANCE_S,
-    STARTUP_APPLY_BUDGET_MS,
     assert_deck_and_menubar,
     assert_editor,
     assert_reviewer,
+    assert_startup,
     assert_switch_record,
-    assert_timing,
-    note_perf,
-    perf_row,
 )
 
 pytestmark = pytest.mark.gate_full
@@ -200,28 +190,6 @@ def assert_full_surfaces(session, oracle: ThemeOracle, label: str) -> None:
 # -- record asserts (pathological variants) --------------------------------------
 
 
-def assert_pathological_record(
-    record: dict, t_swap: float, oracle: ThemeOracle, adjustments: tuple, leg: str, session=None
-) -> dict:
-    """Like tier 2's record assert, but the clamp count must equal tier-1's
-    pure prediction instead of zero."""
-    where = f"pathological leg {leg!r}"
-    assert record["errors"] == [], f"{where}: apply errors {record['errors']}"
-    assert record["vars"] + record["skipped"] == len(VAR_RULES), (
-        f"{where}: accounted {record['vars']}+{record['skipped']} vars, "
-        f"expected {len(VAR_RULES)} (degraded keys ride `skipped`)"
-    )
-    assert record["clamped"] == len(adjustments), (
-        f"{where}: clamped {record['clamped']}, tier-1 predicted {len(adjustments)}"
-    )
-    assert record["dark"] == oracle.dark, f"{where}: polarity mismatch"
-    # Record before asserting (tier 2's rule): red runs keep their numbers.
-    note_perf(session, perf_row(record, t_swap, leg))
-    assert_timing(record, t_swap, leg)
-    assert record["engine_profiles"] >= 1, f"{where}: sveltekit leg dead"
-    assert record["views"] >= 1, f"{where}: no open webview was restyled"
-
-
 def assert_clamp_lines(session, adjustments: tuple) -> None:
     """Every predicted clamp adjustment logged verbatim during this run."""
     logged = [
@@ -238,14 +206,7 @@ def assert_clamp_lines(session, adjustments: tuple) -> None:
 
 
 def test_startup_sanity(gate3_session):
-    record = gate3_session.startup_record
-    assert record is not None
-    assert record["errors"] == [], f"startup apply errors: {record['errors']}"
-    assert record["vars"] + record["skipped"] == len(VAR_RULES)
-    assert record["apply_ms"] <= STARTUP_APPLY_BUDGET_MS, (
-        f"startup apply {record['apply_ms']}ms over the {STARTUP_APPLY_BUDGET_MS:.0f}ms budget"
-    )
-    note_perf(gate3_session, {"leg": "startup", "apply_ms": record["apply_ms"]})
+    assert_startup(gate3_session, gate3_session.startup_record)
 
 
 @pytest.mark.parametrize("theme", THEMES)
@@ -421,7 +382,7 @@ def test_pathological_render(slug: str, gate3_session, add_window, p_themes):
     oracle, _palette, adjustments = p_oracle(slug)
     session.cmd("show_deck")
     record, t_swap, _t_set_done = session.switch(slug)
-    assert_pathological_record(record, t_swap, oracle, adjustments, slug, session)
+    assert_switch_record(record, t_swap, oracle, slug, session, expected_clamps=len(adjustments))
     assert_clamp_lines(session, adjustments)
 
     probe = session.probe("deck")
@@ -494,7 +455,9 @@ def test_p1_faithful_mode(gate3_session, add_window, p_themes):
     # below re-applies *this* palette (the record's theme field is the live
     # theme.name, not the config flip's subject).
     record, _t_swap, _t_set_done = session.switch("anki_theme-gate-p1")
-    assert_pathological_record(record, _t_swap, oracle, adjustments, "p1-prefaithful", session)
+    assert_switch_record(
+        record, _t_swap, oracle, "p1-prefaithful", session, expected_clamps=len(adjustments)
+    )
 
     # The config flip re-applies the current (P1) palette with reason
     # "config". The restore rides a finally: a failure mid-test must never

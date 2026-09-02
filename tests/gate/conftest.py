@@ -21,8 +21,7 @@ for path in (GATE_DIR / "vendor", GATE_DIR.parent.parent / "payload", GATE_DIR.p
 import pytest  # noqa: E402
 
 
-@pytest.fixture(scope="session")
-def gate_session(request):
+def _gate_session(request):
     from gate_harness import GateSession
 
     session = GateSession(no_restore=request.config.getoption("--no-restore"))
@@ -38,19 +37,17 @@ def gate_session(request):
 
 
 @pytest.fixture(scope="session")
+def gate_session(request):
+    """Tier 2's instance."""
+    yield from _gate_session(request)
+
+
+@pytest.fixture(scope="session")
 def gate3_session(request):
     """Tier 3's matrix instance — same shape as tier 2's, plus user-theme
     forks and the mid-session stop (tier 3's down legs launch their own
     instances; see gate3_down)."""
-    from gate_harness import GateSession
-
-    session = GateSession(no_restore=request.config.getoption("--no-restore"))
-    try:
-        session.preflight()
-        session.launch()
-        yield session
-    finally:
-        session.teardown()
+    yield from _gate_session(request)
 
 
 @pytest.fixture(scope="session")

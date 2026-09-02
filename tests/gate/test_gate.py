@@ -31,19 +31,13 @@ pixel assert names its surface + sample point on failure.
 from __future__ import annotations
 
 import json
-import sys
 import time
-from pathlib import Path
 
 import pytest
-
-GATE_DIR = Path(__file__).resolve().parent
-sys.path.insert(0, str(GATE_DIR))
-
-from anki_theme.palette import VAR_RULES  # noqa: E402
-from oracles import ThemeOracle, rgb  # noqa: E402
-from points import sample as _sample  # noqa: E402
-from sampling import Shot, contrast_ratio  # noqa: E402
+from anki_theme.palette import VAR_RULES
+from oracles import ThemeOracle, rgb
+from points import sample as _sample
+from sampling import Shot, contrast_ratio
 
 pytestmark = pytest.mark.gate
 
@@ -130,8 +124,16 @@ def assert_timing(record: dict, t_swap: float, leg: str) -> None:
 
 
 def assert_switch_record(
-    record: dict, t_swap: float, oracle: ThemeOracle, leg: str, session=None
+    record: dict,
+    t_swap: float,
+    oracle: ThemeOracle,
+    leg: str,
+    session=None,
+    expected_clamps: int = 0,
 ) -> dict:
+    """The one record assert for switch legs, stock and pathological alike:
+    `expected_clamps` carries tier-1's predicted clamp count for pathological
+    palettes (0 for stock, where any adjustment is a finding)."""
     where = f"switch leg {leg!r}"
     assert record["errors"] == [], f"{where}: apply errors {record['errors']}"
     # Expected coverage is fixture-derived, never hardcoded: palettes lacking
@@ -144,7 +146,9 @@ def assert_switch_record(
         f"{len(oracle.mapping.vars)}+{len(oracle.mapping.skipped)} "
         "(the fixture through the locked mapping)"
     )
-    assert record["clamped"] == 0, f"{where}: clamp adjusted a stock palette"
+    assert record["clamped"] == expected_clamps, (
+        f"{where}: clamp adjusted {record['clamped']}, expected {expected_clamps}"
+    )
     assert record["dark"] == oracle.dark, f"{where}: polarity mismatch"
     assert tuple(record["leg_ms"]) == LEG_NAMES, (
         f"{where}: per-leg breakdown missing or malformed: {record.get('leg_ms')}"
@@ -159,6 +163,22 @@ def assert_switch_record(
 
 
 # -- surface asserts -----------------------------------------------------------
+
+
+def assert_startup(session, record: dict | None) -> None:
+    """Startup sanity, shared by both tiers' startup legs: the apply completed
+    cleanly and inside the startup budget. The bootloader's sync check (a
+    0.30 ms current-check per docs/performance.md) rides at import before it
+    and is not separately observable from outside the process."""
+    assert record is not None
+    assert record["errors"] == [], f"startup apply errors: {record['errors']}"
+    assert record["vars"] + record["skipped"] == len(VAR_RULES), (
+        f"startup accounted {record['vars']}+{record['skipped']} vars, expected {len(VAR_RULES)}"
+    )
+    assert record["apply_ms"] <= STARTUP_APPLY_BUDGET_MS, (
+        f"startup apply {record['apply_ms']}ms over the {STARTUP_APPLY_BUDGET_MS:.0f}ms budget"
+    )
+    note_perf(session, {"leg": "startup", "apply_ms": record["apply_ms"]})
 
 
 def assert_deck_and_menubar(session, oracle: ThemeOracle, label: str) -> None:
@@ -224,20 +244,7 @@ def assert_editor(session, oracle: ThemeOracle, label: str) -> None:
 
 
 def test_startup_sanity(gate_session):
-    """Startup sanity: the apply completed cleanly and inside the startup
-    budget. The bootloader's sync check (a 0.30 ms current-check per
-    docs/performance.md) rides at import before it and is not separately
-    observable from outside the process."""
-    record = gate_session.startup_record
-    assert record is not None
-    assert record["errors"] == [], f"startup apply errors: {record['errors']}"
-    assert record["vars"] + record["skipped"] == len(VAR_RULES), (
-        f"startup accounted {record['vars']}+{record['skipped']} vars, expected {len(VAR_RULES)}"
-    )
-    assert record["apply_ms"] <= STARTUP_APPLY_BUDGET_MS, (
-        f"startup apply {record['apply_ms']}ms over the {STARTUP_APPLY_BUDGET_MS:.0f}ms budget"
-    )
-    note_perf(gate_session, {"leg": "startup", "apply_ms": record["apply_ms"]})
+    assert_startup(gate_session, gate_session.startup_record)
 
 
 def test_catppuccin_deck_and_menubar(gate_session):

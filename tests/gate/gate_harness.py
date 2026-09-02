@@ -104,6 +104,74 @@ def install_user_theme(slug: str, palette: dict[str, str], mode: str) -> str:
     return to_display_name(slug)
 
 
+def read_applied(log: pathlib.Path) -> list[dict]:
+    """The applied records in an applied.jsonl (empty when absent/unreadable)."""
+    try:
+        lines = log.read_text().splitlines()
+    except OSError:
+        return []
+    return [json.loads(line) for line in lines if line.strip()]
+
+
+def wait_applied(log: pathlib.Path, predicate, timeout_s: float, what: str, alive=None) -> dict:
+    """Poll an applied log (newest first) until a record satisfies `predicate`.
+    `alive`, when given, is called each idle pass and raises if the instance
+    under watch died mid-wait."""
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        for record in reversed(read_applied(log)):
+            if predicate(record):
+                return record
+        if alive is not None:
+            alive()
+        time.sleep(0.1)
+    raise TimeoutError(f"no applied record for {what} within {timeout_s:.0f}s")
+
+
+def _runtime_error_with_log(message: str, log: pathlib.Path | None) -> RuntimeError:
+    tail = ""
+    if log is not None and log.exists():
+        tail = "\n".join(log.read_text().splitlines()[-30:])
+    return RuntimeError(f"{message}\n--- anki.log tail ---\n{tail}")
+
+
+def ctl_roundtrip(
+    ctl: pathlib.Path,
+    seq: int,
+    name: str,
+    args: dict | None = None,
+    timeout: float = COMMAND_TIMEOUT_S,
+    alive=None,
+    archive_dir: pathlib.Path | None = None,
+    fail_log: pathlib.Path | None = None,
+) -> dict:
+    """One gate control-channel round-trip on a ctl dir the caller owns:
+    atomically staged cmd file, liveness-checked done polling, ok-gating with
+    the instance log's tail — the protocol GateSession.cmd drives for the
+    session's own instance, handed to the Anki-down legs (their own scratch
+    instances) so their commands get the same failure detection."""
+    stem = f"{seq:03d}-{name}"
+    cmd_file = ctl / f"{stem}.cmd"
+    done_file = ctl / f"{stem}.done"
+    staging = ctl / f"{stem}.cmd.tmp"
+    staging.write_text(json.dumps({"cmd": name, **(args or {})}))
+    os.replace(staging, cmd_file)  # the 100 ms poller must never see a partial file
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if done_file.exists():
+            result = json.loads(done_file.read_text())
+            done_file.unlink()
+            if archive_dir is not None:
+                (archive_dir / f"{stem}.done.json").write_text(json.dumps(result, indent=1))
+            if not result.get("ok"):
+                raise _runtime_error_with_log(f"gate command {name!r} failed: {result}", fail_log)
+            return result
+        if alive is not None:
+            alive()
+        time.sleep(0.05)
+    raise TimeoutError(f"gate command {name!r} got no reply within {timeout:.0f}s")
+
+
 class GateSession:
     """One Anki process, one scratch base, three asserted theme switches
     (a decoupling flip at launch may add one more)."""
@@ -215,9 +283,12 @@ class GateSession:
             f"startup apply {self.startup_record['apply_ms']}ms"
         )
 
-    def stop_anki(self) -> None:
+    def stop_anki(
+        self, note: str = "gate: scratch instance stopped for the Anki-down legs"
+    ) -> None:
         """Stop the scratch instance mid-session (the Anki-down legs launch
-        their own). Teardown still restores the theme and cleans up."""
+        their own). Teardown still restores the theme and cleans up — and calls
+        this too, with its own note."""
         if self._stopped:
             return
         self._stopped = True
@@ -231,9 +302,9 @@ class GateSession:
         if self._anki_log_handle is not None:
             self._anki_log_handle.close()
             self._anki_log_handle = None
-        print("gate: scratch instance stopped for the Anki-down legs")
+        print(note)
 
-    def restore_theme(self) -> None:
+    def restore_theme(self, note: str = "gate: restored {theme!r} early") -> None:
         """Switch back to the session's original theme early (the down legs
         shouldn't sit on a pathological palette). Idempotent with teardown."""
         if self.no_restore or not self.original_theme:
@@ -245,7 +316,7 @@ class GateSession:
             capture_output=True,
             check=False,
         )
-        print(f"gate: restored {self.original_theme!r} early")
+        print(note.format(theme=self.original_theme))
 
     def register_user_theme(self, slug: str, palette: dict[str, str], mode: str) -> str:
         display = install_user_theme(slug, palette, mode)
@@ -253,15 +324,7 @@ class GateSession:
         return display
 
     def teardown(self) -> None:
-        if not self._stopped and self.anki is not None and self.anki.poll() is None:
-            self.anki.send_signal(signal.SIGTERM)
-            try:
-                self.anki.wait(timeout=30)
-            except subprocess.TimeoutExpired:
-                self.anki.kill()
-                self.anki.wait()
-        if self._anki_log_handle is not None:
-            self._anki_log_handle.close()
+        self.stop_anki(note="gate: scratch instance stopped (teardown)")
         if self._meta_snapshot is not None:
             meta = PAYLOAD / "meta.json"
             if meta.read_bytes() != self._meta_snapshot:
@@ -280,19 +343,12 @@ class GateSession:
         if not self.original_theme:  # preflight never captured it — nothing to restore
             print("gate: no original theme recorded (launch failed early) — skipping restore")
             return
-        subprocess.run(
-            ["omarchy", "theme", "set", self.original_theme],
-            capture_output=True,
-            check=False,
-        )
+        self.restore_theme(note="gate: restored {theme!r}")
         shutil.rmtree(self.scratch, ignore_errors=True)
-        print(f"gate: restored {self.original_theme!r}, removed {self.scratch}")
+        print(f"gate: removed {self.scratch}")
 
     def _fail_with_log(self, message: str) -> RuntimeError:
-        tail = ""
-        if self.anki_log.exists():
-            tail = "\n".join(self.anki_log.read_text().splitlines()[-30:])
-        return RuntimeError(f"{message}\n--- anki.log tail ---\n{tail}")
+        return _runtime_error_with_log(message, self.anki_log)
 
     def _check_alive(self) -> None:
         assert self.anki is not None
@@ -303,24 +359,16 @@ class GateSession:
 
     def cmd(self, name: str, args: dict | None = None, timeout: float = COMMAND_TIMEOUT_S):
         self._cmd_seq += 1
-        stem = f"{self._cmd_seq:03d}-{name}"
-        cmd_file = self.ctl / f"{stem}.cmd"
-        done_file = self.ctl / f"{stem}.done"
-        staging = self.ctl / f"{stem}.cmd.tmp"
-        staging.write_text(json.dumps({"cmd": name, **(args or {})}))
-        os.replace(staging, cmd_file)  # the 100 ms poller must never see a partial file
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            if done_file.exists():
-                result = json.loads(done_file.read_text())
-                done_file.unlink()
-                (self.run_dir / f"{stem}.done.json").write_text(json.dumps(result, indent=1))
-                if not result.get("ok"):
-                    raise self._fail_with_log(f"gate command {name!r} failed: {result}")
-                return result
-            self._check_alive()
-            time.sleep(0.05)
-        raise TimeoutError(f"gate command {name!r} got no reply within {timeout:.0f}s")
+        return ctl_roundtrip(
+            self.ctl,
+            self._cmd_seq,
+            name,
+            args,
+            timeout,
+            alive=self._check_alive,
+            archive_dir=self.run_dir,
+            fail_log=self.anki_log,
+        )
 
     def probe(self, surface: str, overrides: dict | None = None):
         """Run the versioned DOM probe for a surface and stash its result.
@@ -341,21 +389,10 @@ class GateSession:
     # -- applied records -----------------------------------------------------
 
     def applied_records(self) -> list[dict]:
-        try:
-            lines = APPLIED_LOG.read_text().splitlines()
-        except OSError:
-            return []
-        return [json.loads(line) for line in lines if line.strip()]
+        return read_applied(APPLIED_LOG)
 
     def wait_applied(self, predicate, timeout_s: float, what: str) -> dict:
-        deadline = time.monotonic() + timeout_s
-        while time.monotonic() < deadline:
-            for record in reversed(self.applied_records()):
-                if predicate(record):
-                    return record
-            self._check_alive()
-            time.sleep(0.1)
-        raise TimeoutError(f"no applied record for {what} within {timeout_s:.0f}s")
+        return wait_applied(APPLIED_LOG, predicate, timeout_s, what, alive=self._check_alive)
 
     def switch(self, theme_dir: str) -> tuple[dict, float, float]:
         """One live switch through the production path.
