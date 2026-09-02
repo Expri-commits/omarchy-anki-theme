@@ -103,10 +103,6 @@ class ThemeOracle:
         self.dark = self.mode == "dark"
         self.vars = self.mapping.vars
 
-    @classmethod
-    def from_palette(cls, palette: dict[str, str], mode: str) -> ThemeOracle:
-        return cls(palette=palette, mode=mode)
-
     def var(self, aqt_name: str) -> tuple[int, int, int]:
         return rgb(self.vars[aqt_name])
 
@@ -135,10 +131,6 @@ class ThemeOracle:
         return self.var("CANVAS_ELEVATED")
 
     @property
-    def editor_input_fill(self) -> tuple[int, int, int]:
-        return self.canvas_elevated
-
-    @property
     def focus_ring(self) -> tuple[int, int, int]:
         return self.var("BORDER_FOCUS")
 
@@ -155,10 +147,6 @@ class ThemeOracle:
         over the menu background — the blend the sampled pixel shows."""
         alpha_fill = rgba_parts(self.vars["HIGHLIGHT_BG"])
         return blend_over(alpha_fill, self.menu_bg)
-
-    @property
-    def link(self) -> tuple[int, int, int]:
-        return self.var("FG_LINK")
 
     @property
     def selected_fg(self) -> tuple[int, int, int]:

@@ -159,8 +159,6 @@ def _execute(cmd_file: pathlib.Path, spec: dict) -> dict | None:
         return _census()
     if name == "plant_hidden_webview":
         return _plant_hidden_webview()
-    if name == "qss":
-        return _qss()
     if name == "probe":
         return _probe(cmd_file, spec)
     return {"ok": False, "error": f"unknown command {name!r}"}
@@ -263,10 +261,7 @@ def _add_window():
 
 
 def _biggest_webview(window):
-    candidates = [v for v in window.findChildren(AnkiWebView) if v.isVisible()]
-    if not candidates:
-        return None
-    return max(candidates, key=lambda v: v.width() * v.height())
+    return max(_visible_webviews(window), key=lambda v: v.width() * v.height(), default=None)
 
 
 def _poll_web_ready(view, js: str, tries: int, on_done) -> None:
@@ -481,27 +476,6 @@ def _plant_hidden_webview() -> dict:
     return {"ok": True, "planted": len(_planted)}
 
 
-def _qss() -> dict:
-    """The effective Qt chrome facts: what the app stylesheet tells QMenu to
-    paint, the widget style, and the palette window color (characterization
-    aid for popup surfaces)."""
-    from aqt.theme import theme_manager
-
-    sheet = mw.app.styleSheet()
-    menu_rules = [
-        line.strip() for line in sheet.splitlines() if "QMenu" in line or "background-color" in line
-    ]
-    window = mw.app.palette().color(mw.app.palette().ColorRole.Window)
-    return {
-        "ok": True,
-        "widget_style": str(mw.pm.get_widget_style()),
-        "night_mode": theme_manager.night_mode,
-        "palette_window": [window.red(), window.green(), window.blue()],
-        "menu_rules": menu_rules[:40],
-        "sheet_len": len(sheet),
-    }
-
-
 def _menu_payload() -> dict:
     menu = _menu
     assert menu is not None
@@ -660,16 +634,12 @@ def _visible_webviews(window) -> list:
 
 def _prefs_qt_rects(dialog) -> dict:
     """Qt-widget geometry for the native Preferences dialog (dialog-local):
-    the whole content area, the tab widget with its current tab, and the
-    bottom button row — the sample map's prefs points anchor on these."""
+    the whole content area and the tab widget — the sample map's prefs
+    points anchor on these."""
     out: dict = {"dialog": [0, 0, dialog.width(), dialog.height()]}
     tabs = dialog.findChild(QTabWidget)
     if tabs is not None:
         out["tabs"] = _widget_rect(dialog, tabs)
-        out["tabs_current"] = tabs.tabText(tabs.currentIndex())
-    button_box = dialog.form.buttonBox if hasattr(dialog, "form") else None
-    if button_box is not None:
-        out["buttons"] = _widget_rect(dialog, button_box)
     return out
 
 

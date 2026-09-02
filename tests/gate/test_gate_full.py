@@ -479,7 +479,7 @@ def test_p1_faithful_mode(gate3_session, add_window, p_themes):
         shot = Shot(session.capture("main", "p1-faithful"))
         # Faithful mode renders the palette verbatim — the authored (here:
         # invisible) foreground is the expectation.
-        faithful = ThemeOracle.from_palette(palette, MODES["p1"])
+        faithful = ThemeOracle(palette=palette, mode=MODES["p1"])
         canvas_xy, canvas = _sample(session, probe, "deck", "canvas", shot, faithful.canvas)
         _name_xy, name = _sample(session, probe, "deck", "deck_name", shot, faithful.fg, scan=True)
         ratio = contrast_ratio(name, canvas)

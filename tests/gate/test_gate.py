@@ -236,7 +236,7 @@ def assert_editor(session, oracle: ThemeOracle, label: str) -> None:
     probe = session.probe("add")
     shot = Shot(session.capture("add", label))
     _sample(session, probe, "add", "page_bg", shot, oracle.canvas)
-    _sample(session, probe, "add", "input_fill", shot, oracle.editor_input_fill)
+    _sample(session, probe, "add", "input_fill", shot, oracle.canvas_elevated)
     _sample(session, probe, "add", "focus_ring", shot, oracle.focus_ring, scan=True)
 
 

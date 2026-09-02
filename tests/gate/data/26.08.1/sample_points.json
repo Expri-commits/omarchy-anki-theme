@@ -190,11 +190,6 @@
   "below_floor": {
     "_comment": "The add-on-inert render asserts against Anki's own defaults, read live from aqt.colors in the test process (point name -> aqt var). The polarity the legs lock: dark.",
     "night_mode": "dark",
-    "deck_canvas": "CANVAS",
-    "menubar_bg": "CANVAS",
-    "menubar_text": "FG"
-  },
-  "data_colors": {
-    "_comment": "Characterize-then-lock values that are NOT palette-derived. Empty as of ticket 23's final characterization: the stats chart series is palette-mapped (STATE_NEW at flot's fill=0.7, see characterized) and the Preferences surface turned out to be the NATIVE Qt dialog (tab pane = CANVAS_ELEVATED, dialog = QPalette Window = CANVAS) — its sveltekit page hides on a non-current Labs tab, so the prefs button (--bs-* seam, ledger row 2) is not part of the rendered surface; the seam observation moves to the gallery review of the Labs tab."
+    "deck_canvas": "CANVAS"
   }
 }

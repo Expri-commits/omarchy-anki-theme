@@ -17,7 +17,6 @@ from __future__ import annotations
 import json
 import signal
 import subprocess
-import time
 from pathlib import Path
 
 
@@ -26,8 +25,6 @@ class Recorder:
 
     def __init__(self, path: Path) -> None:
         self.path = path
-        self.t_spawn = time.time()
-        self.t_stop = 0.0
         self._proc = subprocess.Popen(
             [
                 "gpu-screen-recorder",
@@ -50,13 +47,11 @@ class Recorder:
             stderr=subprocess.DEVNULL,
         )
 
-    def stop(self) -> float:
+    def stop(self) -> None:
         """SIGINT (the wrapper's own stop signal — SIGTERM discards), then
-        wait for the muxer to flush. Returns the wall clock at the stop."""
-        self.t_stop = time.time()
+        wait for the muxer to flush."""
         self._proc.send_signal(signal.SIGINT)
         self._proc.wait(timeout=60)
-        return self.t_stop
 
 
 def _frame_means(path: Path) -> tuple[float, list[tuple[int, int, int]]]:
