@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.expri-commits.anki-theme",
   "name": "Anki, Themed by Omarchy",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "author": "Expri",
   "license": "MIT",
   "description": "Recolor Anki live in the active Omarchy palette: deck browser, reviewer, editor, and dialogs follow every theme switch, no restart.",
