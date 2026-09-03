@@ -1,4 +1,4 @@
-"""Anki Theme for Omarchy — Anki recolored live in the active Omarchy palette.
+"""Anki, Themed by Omarchy — Anki recolored live in the active Omarchy palette.
 
 Add-on entry as a bootloader (tickets 12/19): the sync check runs before
 anything else imports, so a payload update that lands mid-startup bounds the

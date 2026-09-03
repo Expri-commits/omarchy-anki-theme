@@ -1,4 +1,4 @@
-# Anki Theme for Omarchy
+# Anki, Themed by Omarchy
 
 Anki recolored live in whatever Omarchy theme is active. Switch themes from the
 menu, the CLI, or a scheduler and a running Anki follows: deck browser,
@@ -50,7 +50,7 @@ ignoring that leaves things as they are.
 ## Remove
 
 1. `omarchy plugin remove io.github.expri-commits.anki-theme`
-2. In Anki: Tools → Add-ons → Anki Theme for Omarchy → Delete
+2. In Anki: Tools → Add-ons → Anki, Themed by Omarchy → Delete
 
 Removing the plugin alone leaves the add-on theming; it just stops getting
 updates. Step 2 turns the colors off. Restart Anki and it returns to its own
@@ -62,7 +62,7 @@ rm -rf ~/.local/state/omarchy/anki-theme
 
 ## Config
 
-One setting, under Tools → Add-ons → Anki Theme for Omarchy → Config in Anki:
+One setting, under Tools → Add-ons → Anki, Themed by Omarchy → Config in Anki:
 `contrast_clamp`, default `true`. Set it to `false` for faithful mode, colors
 exactly as the theme authors them.
 
