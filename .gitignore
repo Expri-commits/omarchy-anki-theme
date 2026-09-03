@@ -13,3 +13,4 @@ tests/gate/artifacts/
 tests/gate/vendor/
 # internal dev tracker (decision log) — kept local, never published
 .scratch/
+.video_agent
