@@ -7,7 +7,7 @@
 # in the repo tree, gitignored).
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-LINK="${ANKI_THEME_ADDONS:-$HOME/.local/share/Anki2/addons21}/anki_theme"
+LINK="$HOME/.local/share/Anki2/addons21/anki_theme"
 
 case "${1:-install}" in
   install)

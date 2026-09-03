@@ -70,7 +70,7 @@ def main() -> int:
     stock = [t for t in themes if not t.startswith("anki_theme-gate-")]
     pathological = [t for t in themes if t.startswith("anki_theme-gate-")]
 
-    sections: list[tuple[str, list[tuple[str, Path]]]] = []
+    sections: list[tuple[str, str, Path]] = []
     for theme in stock:
         tiles = [(kind, path) for kind, path in themes[theme]]
         grab = run / f"menu-{theme}.png"
@@ -78,7 +78,7 @@ def main() -> int:
             tiles.append(("menu (grab)", str(grab)))
         png = out / f"{theme}.png"
         montage(png, tiles)
-        sections.append(("Stock palettes", [(theme, png)]))
+        sections.append(("Stock palettes", theme, png))
 
     if pathological:
         tiles = []
@@ -86,7 +86,7 @@ def main() -> int:
             tiles += [(f"{theme} {kind}", path) for kind, path in themes[theme]]
         png = out / "pathological.png"
         montage(png, tiles)
-        sections.append(("Pathological P1–P5 (clamped except P1-faithful)", [("all", png)]))
+        sections.append(("Pathological P1–P5 (clamped except P1-faithful)", "all", png))
 
     faithful = sorted(run.glob("shot-*-main-p1-faithful.png"))
     below = sorted(run.glob("shot-*-main-below-floor-*.png"))
@@ -95,17 +95,16 @@ def main() -> int:
     if specials:
         png = out / "below-floor.png"
         montage(png, specials)
-        sections.append(("Below-floor legs + verbatim-faithful P1", [("all", png)]))
+        sections.append(("Below-floor legs + verbatim-faithful P1", "all", png))
 
     rows = []
-    for title, entries in sections:
+    for title, label, png in sections:
         rows.append(f"<h2>{html.escape(title)}</h2>")
-        for label, png in entries:
-            rel = png.relative_to(run)
-            rows.append(
-                f"<figure><img loading='lazy' src='{html.escape(rel.name)}'>"
-                f"<figcaption>{html.escape(label)}</figcaption></figure>"
-            )
+        rel = png.relative_to(run)
+        rows.append(
+            f"<figure><img loading='lazy' src='{html.escape(rel.name)}'>"
+            f"<figcaption>{html.escape(label)}</figcaption></figure>"
+        )
     (out / "index.html").write_text(
         "<!doctype html><meta charset='utf-8'><title>Anki Theme gate gallery</title>"
         "<style>body{background:#222;color:#ddd;font-family:sans-serif;max-width:2000px;"

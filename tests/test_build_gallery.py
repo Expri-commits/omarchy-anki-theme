@@ -8,14 +8,12 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 
 
-def builder():
-    spec = importlib.util.spec_from_file_location(
-        "build_gallery", REPO / "scripts" / "build_gallery.py"
-    )
-    mod = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(mod)
-    return mod
+_spec = importlib.util.spec_from_file_location(
+    "build_gallery", REPO / "scripts" / "build_gallery.py"
+)
+build_gallery = importlib.util.module_from_spec(_spec)
+assert _spec.loader is not None
+_spec.loader.exec_module(build_gallery)
 
 
 def make_run(tmp_path: Path, *names: str) -> Path:
@@ -33,7 +31,7 @@ def test_stock_theme_gets_all_five_surfaces_in_step_order(tmp_path):
         "shot-004-stats-stats-catppuccin.png",
         "shot-005-prefs-prefs-catppuccin.png",
     )
-    themes = builder().parse_shots(run)
+    themes = build_gallery.parse_shots(run)
     assert [kind for kind, _ in themes["catppuccin"]] == [
         "deck",
         "review",
@@ -50,9 +48,9 @@ def test_special_legs_are_excluded_from_themes(tmp_path):
         "shot-122-main-below-floor-absent.png",
         "shot-123-main-below-floor-unreadable.png",
     )
-    assert builder().parse_shots(run) == {}
+    assert build_gallery.parse_shots(run) == {}
 
 
 def test_unrecognized_files_are_ignored(tmp_path):
     run = make_run(tmp_path, "menu-catppuccin.png", "legs", "001-hello.done.json")
-    assert builder().parse_shots(run) == {}
+    assert build_gallery.parse_shots(run) == {}
